@@ -1,10 +1,23 @@
 {
   "name": "gws-worker",
   "main": "src/index.js",
-  "compatibility_date": "2025-03-03",
+  "compatibility_date": "2025-09-15",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true,
     "logs": { "enabled": true }
-  }
+  },
+  "kv_namespaces": [
+    // Shared auth KV — same namespace as d1-rest CACHE and google-auth-worker KV.
+    // GoogleOAuthManager reads google_oauth_tokens from here as fallback when AUTH binding is cold.
+    { "binding": "CACHE", "id": "e0ba67cf57c24ab49a7a3be5f20ece05" }
+  ],
+  "r2_buckets": [
+    // Shared auth R2 — canonical token store written by google-auth-worker.
+    // GoogleOAuthManager reads auth/gws/tokens.json from here as second fallback.
+    { "binding": "R2_AUTH", "bucket_name": "notebooklm-storage" }
+  ],
+  "services": [
+    { "binding": "GOOGLE_AUTH", "service": "google-auth-worker" }
+  ]
 }

@@ -1106,9 +1106,8 @@ var GoogleOAuthManager = class {
       } catch {
       }
     }
-    if (this.kv && tokens.refresh_token) {
-      await this.kv.put(this.kvKey, payload, { expirationTtl: 86400 * 365 });
-    }
+    // KV write intentionally removed: google-auth-worker owns google_oauth_tokens in KV.
+    // R2 write above is retained as a secondary canonical store.
     this.cachedToken = { access_token: tokens.access_token, expires_at: tokens.expires_at };
     return tokens;
   }
@@ -1120,9 +1119,9 @@ var GoogleOAuthManager = class {
     if (this.cachedToken && Date.now() < this.cachedToken.expires_at) {
       return this.cachedToken.access_token;
     }
-    if (env2.AUTH) {
+    if (env2.GOOGLE_AUTH) {
       try {
-        const r = await env2.AUTH.fetch(new Request("http://internal/token"));
+        const r = await env2.GOOGLE_AUTH.fetch(new Request("http://internal/token"));
         if (r.ok) {
           const d = await r.json();
           if (d.access_token) {
@@ -1168,7 +1167,19 @@ var GoogleOAuthManager = class {
     if (!refreshToken) {
       throw new Error("No Google refresh token available. Visit /google/auth to authenticate.");
     }
-    const resp = await fetch(GOOGLE_TOKEN_URL, {
+    // Parallelize: race GOOGLE_AUTH binding against direct Google token fetch.
+    // GOOGLE_AUTH owns canonical KV — if it wins, no R2 update needed.
+    // Direct fetch wins if binding is unavailable or slow — updates R2 only.
+    const googleAuthPromise = env2.GOOGLE_AUTH
+      ? env2.GOOGLE_AUTH.fetch(new Request("http://internal/token"))
+          .then(async (r) => {
+            if (!r.ok) throw new Error("binding non-ok");
+            const d = await r.json();
+            if (!d.access_token) throw new Error("no access_token");
+            return { access_token: d.access_token, expires_at: Date.now() + 35e5, _source: "binding" };
+          })
+      : Promise.reject(new Error("no binding"));
+    const directFetchPromise = fetch(GOOGLE_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -1177,37 +1188,34 @@ var GoogleOAuthManager = class {
         client_secret: this.clientSecret,
         grant_type: "refresh_token"
       })
+    }).then(async (resp) => {
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(`Token refresh failed: ${resp.status} - ${err}`);
+      }
+      const data = await resp.json();
+      return {
+        access_token: data.access_token,
+        expires_at: Date.now() + data.expires_in * 1e3 - 6e4,
+        _source: "direct"
+      };
     });
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(`Token refresh failed: ${resp.status} - ${err}`);
-    }
-    const data = await resp.json();
-    const newToken = {
-      access_token: data.access_token,
-      expires_at: Date.now() + data.expires_in * 1e3 - 6e4
-    };
-    this.cachedToken = newToken;
-    const updateTokens = /* @__PURE__ */ __name(async (store) => {
+    const newToken = await Promise.any([googleAuthPromise, directFetchPromise]);
+    this.cachedToken = { access_token: newToken.access_token, expires_at: newToken.expires_at };
+    // Update R2 only when the direct path won — google-auth-worker owns google_oauth_tokens in KV.
+    if (newToken._source === "direct" && this.r2) {
       try {
-        const src = store === "r2" ? this.r2 : this.kv;
-        if (!src) return;
-        const raw = store === "r2" ? await (await src.get(R2_GWS_PATH))?.text() : await src.get(this.kvKey);
-        if (!raw) return;
-        const tokens = JSON.parse(raw);
-        tokens.access_token = newToken.access_token;
-        tokens.expires_at = newToken.expires_at;
-        tokens.saved_at = (/* @__PURE__ */ new Date()).toISOString();
-        const body = JSON.stringify(tokens);
-        if (store === "r2") {
-          await src.put(R2_GWS_PATH, body, { httpMetadata: { contentType: "application/json" } });
-        } else {
-          await src.put(this.kvKey, body, { expirationTtl: 86400 * 365 });
+        const obj = await this.r2.get(R2_GWS_PATH);
+        if (obj) {
+          const tokens = JSON.parse(await obj.text());
+          tokens.access_token = newToken.access_token;
+          tokens.expires_at = newToken.expires_at;
+          tokens.saved_at = (/* @__PURE__ */ new Date()).toISOString();
+          await this.r2.put(R2_GWS_PATH, JSON.stringify(tokens), { httpMetadata: { contentType: "application/json" } });
         }
       } catch {
       }
-    }, "updateTokens");
-    await Promise.all([updateTokens("r2"), updateTokens("kv")]);
+    }
     return newToken.access_token;
   }
 };
@@ -6635,27 +6643,36 @@ Common params by action:
 Actions: read, write, batch_get, batch_update, batch_clear, batch_request, add_sheet, copy_to, list, create, info, format, validation, conditional_format, chart, named_range
 
 Common params by action:
-- read: spreadsheetId + range (required), majorDimension (ROWS/COLUMNS), valueRenderOption (FORMATTED_VALUE/UNFORMATTED_VALUE/FORMULA), dateTimeRenderOption
-- write: spreadsheetId + range (required), values (array of arrays), mode (write/append/clear), valueInputOption (RAW/USER_ENTERED)
-- batch_get: spreadsheetId + ranges (array, required), majorDimension, valueRenderOption
+- read: spreadsheetId + range_a1 (required, A1 string like 'Sheet1!A1:D10'), majorDimension (ROWS/COLUMNS), valueRenderOption (FORMATTED_VALUE/UNFORMATTED_VALUE/FORMULA), dateTimeRenderOption
+- write: spreadsheetId + range_a1 (required, A1 string), values (array of arrays), mode (write/append/clear), valueInputOption (RAW/USER_ENTERED)
+- batch_get: spreadsheetId + ranges (array of A1 strings, required), majorDimension, valueRenderOption
 - batch_update: spreadsheetId + data (array of {range, values}, required), valueInputOption
-- batch_clear: spreadsheetId + ranges (array, required)
+- batch_clear: spreadsheetId + ranges (array of A1 strings, required)
 - batch_request: spreadsheetId + requests (array of batchUpdate request objects) — format, merge, charts, etc.
 - add_sheet: spreadsheetId + title (required), index
 - copy_to: spreadsheetId + sheetId (number) + destinationSpreadsheetId (required)
 - list: maxResults — list all spreadsheets
 - create: title (required), sheetTitles (array)
-- info: spreadsheetId (required), ranges, includeGridData, fields
-- format: spreadsheetId + sheetId + range ({startRowIndex, endRowIndex, startColumnIndex, endColumnIndex}), bold, italic, fontSize, textColor, backgroundColor, horizontalAlignment, wrapStrategy, numberFormat
-- validation: spreadsheetId + range + rule (required)
-- conditional_format: spreadsheetId + ranges + condition + format (required)
+- info: spreadsheetId (required), ranges, includeGridData, fields. spreadsheetId is also a Drive fileId, but use sheets.info for sheet structure, drive.get for raw export.
+- format: spreadsheetId + sheetId + range_grid ({startRowIndex, endRowIndex, startColumnIndex, endColumnIndex}), bold, italic, fontSize, textColor, backgroundColor, horizontalAlignment, wrapStrategy, numberFormat
+- validation: spreadsheetId + range_grid + rule (required)
+- conditional_format: spreadsheetId + ranges (grid objects) + condition + format (required)
 - chart: spreadsheetId + sheetId + chartSpec (required)
-- named_range: spreadsheetId + name + range (required)`,
+- named_range: spreadsheetId + name + range_grid (required)
+
+Range parameter convention:
+- range_a1 (string, A1 notation) → read, write, batch_clear (single range), batch_get (single)
+- range_grid (object GridRange) → format, conditional_format, validation, named_range
+- Legacy 'range' alias still accepted: maps to range_a1 for read/write, range_grid for format/validation/named_range.`,
     inputSchema: {
       type: "object",
       properties: {
         action: { type: "string", enum: ["read", "write", "batch_get", "batch_update", "batch_clear", "batch_request", "add_sheet", "copy_to", "list", "create", "info", "format", "validation", "conditional_format", "chart", "named_range"] },
-        spreadsheetId: { type: "string" }, range: { type: "object" }, ranges: { type: "array" },
+        spreadsheetId: { type: "string" },
+        range_a1: { type: "string", description: "A1 notation 'Sheet1!A1:D10' (for read/write/batch_clear/batch_get actions)" },
+        range_grid: { type: "object", description: "GridRange {startRowIndex, endRowIndex, startColumnIndex, endColumnIndex} (for format/conditional_format/named_range/validation actions)" },
+        range: { type: ["string", "object"], description: "DEPRECATED — use range_a1 (string) or range_grid (object) instead. Still accepted for backward compatibility." },
+        ranges: { type: "array" },
         values: { type: "array" }, data: { type: "array" }, requests: { type: "array" },
         title: { type: "string" }, sheetTitles: { type: "array" }, sheetId: { type: "number" },
         destinationSpreadsheetId: { type: "string" }, index: { type: "number" },
@@ -6710,9 +6727,9 @@ Actions: list, events, get_event, create, update, delete, freebusy, quick_add, m
 
 Actions: get, create, modify, find_replace, comments, add_comment, reply_comment, resolve_comment, insert_image, insert_elements, headers_footers, structure, export_pdf
 
-- get: documentId (required)
-- create: title (required), content
-- modify: documentId (required), operations (array of batchUpdate requests)
+- get: documentId (required) — Google Doc ID (also a Drive fileId, but use docs.get for doc structure, drive.get for raw export).
+- create: title (required), content — returns documentId (also usable as Drive fileId).
+- modify: documentId (required), operations (array of batchUpdate requests) — documentId is also a Drive fileId; use docs.modify for content, drive.update for metadata.
 - find_replace: documentId + find + replace (required), matchCase
 - comments: fileId (required) — list comments
 - add_comment: fileId + content (required)
@@ -6798,8 +6815,8 @@ Actions: search, list, get, create, update, delete
 
 Actions: create, get, batch_update, get_page, get_thumbnail
 
-- create: title (required)
-- get: presentationId (required)
+- create: title (required) — returns presentationId (also usable as Drive fileId).
+- get: presentationId (required) — Slides presentation ID (also a Drive fileId, but use slides.get for slide structure, drive.get for raw export).
 - batch_update: presentationId + requests (required)
 - get_page: presentationId + pageObjectId (required)
 - get_thumbnail: presentationId + pageObjectId (required)`,
@@ -6960,6 +6977,18 @@ Actions: annotate, ocr
   }
 ];
 async function callTool(name, args, gws, env2) {
+  // Normalize sheets range parameters: range_a1 (string) and range_grid (object)
+  // map to legacy `args.range` based on the action. Preserves backward compatibility
+  // for callers that still pass `range` directly.
+  if (name && name.startsWith("sheets_")) {
+    const a1Actions = new Set(["sheets_read", "sheets_write", "sheets_batch_clear", "sheets_batch_get"]);
+    const gridActions = new Set(["sheets_format", "sheets_validation", "sheets_conditional_format", "sheets_named_range"]);
+    if (args.range_a1 != null && args.range == null && a1Actions.has(name)) {
+      args.range = args.range_a1;
+    } else if (args.range_grid != null && args.range == null && gridActions.has(name)) {
+      args.range = args.range_grid;
+    }
+  }
   switch (name) {
     // Drive
     case "drive_search":
@@ -7483,12 +7512,30 @@ var index_default = {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
     if (url.pathname === "/health") {
+      let oauthFreshness = {};
+      try {
+        const tokenRaw = await env2.CACHE?.get("google_oauth_tokens");
+        const token = tokenRaw ? JSON.parse(tokenRaw) : null;
+        if (token) {
+          const tokenFresh = token.expires_at ? Date.now() < token.expires_at : false;
+          oauthFreshness = {
+            oauth_fresh: tokenFresh,
+            oauth_expires_at: token.expires_at ? new Date(token.expires_at).toISOString() : null,
+            oauth_has_refresh: !!token.refresh_token,
+          };
+        } else {
+          oauthFreshness = { oauth_fresh: false, oauth_expires_at: null, oauth_has_refresh: false };
+        }
+      } catch {}
       return withCors(json({
         status: "ok",
         worker: "gws-worker",
         auth: "session-key",
         tools: TOOLS.length,
-        hasGoogleCreds: !!(env2.GOOGLE_REFRESH_TOKEN && env2.GOOGLE_OAUTH_CLIENT_ID)
+        hasGoogleCreds: !!(env2.GOOGLE_REFRESH_TOKEN && env2.GOOGLE_OAUTH_CLIENT_ID),
+        kv: !!env2.CACHE,
+        r2: !!env2.R2_AUTH,
+        ...oauthFreshness,
       }));
     }
     if (url.pathname === "/.well-known/oauth-protected-resource") {
