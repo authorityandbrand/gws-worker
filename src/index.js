@@ -951,16 +951,16 @@ var GOOGLE_SCOPES = [
   // --- Google Meet (client video meetings) ---
   "https://www.googleapis.com/auth/meetings.space.readonly",
   "https://www.googleapis.com/auth/meetings.space.created",
-  // --- Admin SDK (org structure lookup — read-only) ---
+  // --- Admin SDK (org structure lookup + directory management) ---
   "https://www.googleapis.com/auth/admin.directory.user.readonly",
   "https://www.googleapis.com/auth/admin.directory.group.readonly",
   "https://www.googleapis.com/auth/admin.directory.orgunit.readonly",
   "https://www.googleapis.com/auth/admin.directory.domain.readonly",
   // --- Google Cloud Platform ---
-  // Single scope covers: Gemini, Vertex AI, NotebookLM (Discovery Engine),
+  // Single scope covers: Vertex AI, NotebookLM (Discovery Engine),
   // Document AI, Cloud Vision, Speech, Translation, Natural Language, etc.
-  // Note: discoveryengine is NOT a valid OAuth scope — cloud-platform covers it.
   "https://www.googleapis.com/auth/cloud-platform",
+  // cloud-platform covers Gemini generateContent; generative-language.* are sub-scopes for tuning/retrieval
   "https://www.googleapis.com/auth/generative-language.tuning",
   "https://www.googleapis.com/auth/generative-language.retriever",
   // --- Blogger ---
@@ -1001,8 +1001,7 @@ var GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/cloud-speech",
   // --- Cloud Natural Language ---
   "https://www.googleapis.com/auth/cloud-language",
-  // --- Google Chat ---
-  "https://www.googleapis.com/auth/chat.bot",
+  // --- Google Chat (chat.bot removed — requires Chat app approval, not for standard OAuth) ---
   "https://www.googleapis.com/auth/chat.messages",
   "https://www.googleapis.com/auth/chat.spaces",
   "https://www.googleapis.com/auth/chat.memberships",
@@ -1165,7 +1164,7 @@ var GoogleOAuthManager = class {
       refreshToken = env2.GOOGLE_REFRESH_TOKEN;
     }
     if (!refreshToken) {
-      throw new Error("No Google refresh token available. Visit /google/auth to authenticate.");
+      throw new Error("No Google refresh token available. Authenticate via d1-rest worker.");
     }
     // Parallelize: race GOOGLE_AUTH binding against direct Google token fetch.
     // GOOGLE_AUTH owns canonical KV — if it wins, no R2 update needed.
@@ -7527,6 +7526,13 @@ var index_default = {
           oauthFreshness = { oauth_fresh: false, oauth_expires_at: null, oauth_has_refresh: false };
         }
       } catch {}
+      let bindingOk = false;
+      try {
+        if (env2.GOOGLE_AUTH) {
+          const br = await env2.GOOGLE_AUTH.fetch(new Request("http://internal/token"));
+          bindingOk = br.ok;
+        }
+      } catch {}
       return withCors(json({
         status: "ok",
         worker: "gws-worker",
@@ -7535,6 +7541,8 @@ var index_default = {
         hasGoogleCreds: !!(env2.GOOGLE_REFRESH_TOKEN && env2.GOOGLE_OAUTH_CLIENT_ID),
         kv: !!env2.CACHE,
         r2: !!env2.R2_AUTH,
+        google_auth_binding: !!env2.GOOGLE_AUTH,
+        google_auth_binding_ok: bindingOk,
         ...oauthFreshness,
       }));
     }
@@ -7560,6 +7568,11 @@ var index_default = {
     if (url.pathname === "/oauth/authorize") {
       const redirectUri = url.searchParams.get("redirect_uri") ?? "";
       const state = url.searchParams.get("state") ?? "";
+      if (!redirectUri) {
+        // Direct browser visit — serve info page instead of crashing
+        return new Response(`<html><body><h2>MCP OAuth Endpoint</h2><p>This endpoint is for MCP client authentication. Google auth is managed by the d1-rest worker.</p></body></html>`,
+          { status: 200, headers: { "Content-Type": "text/html" } });
+      }
       const code = `gws-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       const sep = redirectUri.includes("?") ? "&" : "?";
       return Response.redirect(`${redirectUri}${sep}code=${code}&state=${state}`, 302);

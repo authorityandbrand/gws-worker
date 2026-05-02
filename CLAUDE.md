@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A Cloudflare Worker that wraps the full Google Workspace API surface as an MCP (Model Context Protocol) server. Deployed at `gws-worker.authorityandbrand.workers.dev`. The worker exposes 109 individual MCP tools across 15 Google API services, consolidated into ~17 grouped tools for MCP `tools/list`.
+A Cloudflare Worker that wraps the full Google Workspace API surface as an MCP (Model Context Protocol) server. Deployed at `gws-worker.authorityandbrand.workers.dev`. The worker exposes ~153 individual MCP tools across 15 Google API services, consolidated into 17 grouped tools for MCP `tools/list`.
 
 ## Build & Deploy
 
@@ -21,11 +21,11 @@ curl https://gws-worker.authorityandbrand.workers.dev/health  # Verify deploymen
 
 Single-file worker (`src/index.js`, ~7,500 lines) with three layers:
 
-1. **`GoogleOAuthManager`** (~line 1048) — OAuth2 token lifecycle. Stores tokens in both KV (`CACHE`) and R2 (`R2_AUTH`). Tries `GOOGLE_ACCESS_TOKEN` env var first, then `AUTH` service binding, then KV/R2 stored refresh tokens, then `GOOGLE_REFRESH_TOKEN` env var as last resort.
+1. **`GoogleOAuthManager`** (~line 1048) — OAuth2 token lifecycle. Stores tokens in both KV (`CACHE`) and R2 (`R2_AUTH`). Tries `GOOGLE_ACCESS_TOKEN` env var first, then `GOOGLE_AUTH` service binding, then KV/R2 stored refresh tokens, then `GOOGLE_REFRESH_TOKEN` env var as last resort.
 
-2. **`GoogleWorkspaceClient`** (~line 1244) — Typed methods for each Google API call (Gmail, Drive, Calendar, Docs, Sheets, Slides, Tasks, Contacts, Chat, Forms, Apps Script, Gemini, Vision, Web Search, NotebookLM/Discovery Engine). All methods call `googleFetch()` which adds Bearer auth and handles JSON responses.
+2. **`GoogleWorkspaceClient`** (~line 1257) — Typed methods for each Google API call (Gmail, Drive, Calendar, Docs, Sheets, Slides, Tasks, Contacts, Chat, Forms, Apps Script, Gemini, Vision, Web Search, NotebookLM/Discovery Engine). All methods call `googleFetch()` which adds Bearer auth and handles JSON responses.
 
-3. **MCP + HTTP layer** (~line 4910) — Request routing:
+3. **MCP + HTTP layer** (~line 7474) — Request routing:
    - `/health` — health check
    - `/mcp` — MCP JSON-RPC (Streamable HTTP transport)
    - `/sse` + `/message` — MCP SSE transport (legacy)
@@ -36,10 +36,10 @@ Single-file worker (`src/index.js`, ~7,500 lines) with three layers:
 
 Two tool arrays serve different purposes:
 
-- **`TOOLS`** (~line 4936): 109 individual tools with full `inputSchema` definitions (e.g., `drive_search`, `gmail_send`). Used for execution dispatch in `callTool()`.
-- **`GROUPED_TOOLS`** (~line 6529): ~17 grouped tools (e.g., `drive`, `gmail`) with an `action` parameter. Returned by `tools/list`. When called, the action is expanded: `drive` + `action: "search"` → dispatches to `drive_search`.
+- **`TOOLS`** (~line 4949): ~153 individual tools with full `inputSchema` definitions (e.g., `drive_search`, `gmail_send`). Used for execution dispatch in `callTool()`.
+- **`GROUPED_TOOLS`** (~line 6542): 17 grouped tools (e.g., `drive`, `gmail`) with an `action` parameter. Returned by `tools/list`. When called, the action is expanded: `drive` + `action: "search"` → dispatches to `drive_search`.
 
-The `callTool()` function (~line 6957) is a switch statement mapping tool names to `GoogleWorkspaceClient` method calls.
+The `callTool()` function (~line 6979) is a switch statement mapping tool names to `GoogleWorkspaceClient` method calls.
 
 ## Environment Bindings
 
@@ -52,7 +52,7 @@ The `callTool()` function (~line 6957) is a switch statement mapping tool names 
 | `GOOGLE_ACCESS_TOKEN` | Var | Direct access token override |
 | `CACHE` | KV | Token storage (key: `google_oauth_tokens`) |
 | `R2_AUTH` | R2 | Token backup storage (path: `auth/gws/tokens.json`) |
-| `AUTH` | Service | Service binding to google-auth-worker |
+| `GOOGLE_AUTH` | Service | Service binding to google-auth-worker |
 | `GOOGLE_CLOUD_API_KEY` | Secret | For Vision, Natural Language APIs |
 | `GOOGLE_PSE_ENGINE_ID` | Var | Programmable Search Engine ID |
 
@@ -64,11 +64,17 @@ See `API-COVERAGE-AUDIT.md` for the complete tool-by-API mapping and ~230 intern
 
 ## OAuth Scopes
 
-The `GOOGLE_SCOPES` constant (~line 909) requests ~80 OAuth scopes covering all supported services. Scopes are joined into a single space-delimited string. NotebookLM requires the explicit `discoveryengine.readwrite` scope — `cloud-platform` alone is insufficient.
+The `GOOGLE_SCOPES` constant (~line 909) requests ~100 OAuth scopes covering all supported services. Scopes are joined into a single space-delimited string.
+
+Key scope notes:
+- NotebookLM requires explicit `discoveryengine.readwrite` — `cloud-platform` alone is insufficient.
+- Gemini `generateContent` requires `generative-language` — `cloud-platform` alone may fail on some endpoints.
+- YouTube/Analytics (`youtube`, `youtube.readonly`, `yt-analytics.readonly`), Keep, Photos, Classroom, and Google Analytics scopes were added 2026-05-01. **Re-authenticate via `/google/auth` to include them in existing tokens.**
+- Admin Directory write ops (`createAdminUser`, `createAdminGroup`, etc.) need `admin.directory.user` and `admin.directory.group` (not just the `.readonly` variants).
 
 ## Key Patterns
 
 - All Google API calls go through `googleFetch(accessToken, url, options)` (~line 1214) which handles param serialization, auth headers, and JSON parsing.
 - Gmail body decoding: `decodeGmailBody()` recursively walks MIME parts, preferring `text/plain` over `text/html`.
-- Token refresh cascade: env var → service binding → KV → R2 → env refresh token. Tokens cached in-memory for the request lifecycle.
+- Token refresh cascade: `GOOGLE_AUTH` service binding races against direct Google token fetch (`Promise.any`); binding win skips R2 update since google-auth-worker owns KV. Tokens cached in-memory for the request lifecycle.
 - `/v1/` prefix is stripped from paths to support CF AI Gateway routing.
