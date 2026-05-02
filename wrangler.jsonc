@@ -3,21 +3,47 @@
   "main": "src/index.js",
   "compatibility_date": "2025-09-15",
   "compatibility_flags": ["nodejs_compat"],
+  "account_id": "e105d76aa6c851abdbd13d34d901cc7c",
+
+  // ── Observability ──────────────────────────────────────────────────────────
   "observability": {
     "enabled": true,
+    "head_sampling_rate": 1,
     "logs": { "enabled": true }
   },
+
+  // ── KV ─────────────────────────────────────────────────────────────────────
+  // Shared auth namespace — GoogleOAuthManager reads google_oauth_tokens (fallback).
+  // Same namespace as google-auth-worker KV, notebooklm-worker KV_CACHE.
+  // Binding name must be CACHE (referenced as env.CACHE throughout src/index.js).
   "kv_namespaces": [
-    // Shared auth KV — same namespace as d1-rest CACHE and google-auth-worker KV.
-    // GoogleOAuthManager reads google_oauth_tokens from here as fallback when AUTH binding is cold.
     { "binding": "CACHE", "id": "e0ba67cf57c24ab49a7a3be5f20ece05" }
   ],
+
+  // ── R2 ─────────────────────────────────────────────────────────────────────
+  // Shared auth R2 — canonical token store written by google-auth-worker.
+  // GoogleOAuthManager reads auth/gws/tokens.json here as second fallback.
   "r2_buckets": [
-    // Shared auth R2 — canonical token store written by google-auth-worker.
-    // GoogleOAuthManager reads auth/gws/tokens.json from here as second fallback.
     { "binding": "R2_AUTH", "bucket_name": "notebooklm-storage" }
   ],
+
+  // ── Service Bindings ───────────────────────────────────────────────────────
+  // GOOGLE_AUTH: token authority — /token returns fresh service account bearer token.
+  // All Google API calls go through googleFetch() which calls getAccessToken() first.
+  // Token cascade: GOOGLE_AUTH binding → KV cache → R2 backup → GOOGLE_REFRESH_TOKEN secret.
   "services": [
     { "binding": "GOOGLE_AUTH", "service": "google-auth-worker" }
   ]
+
+  // ── Secrets (wrangler secret put <NAME> --name gws-worker) ─────────────────
+  // SESSION_KEY              — Bearer token for MCP auth guard (optional — open if unset)
+  // GOOGLE_OAUTH_CLIENT_ID   — OAuth2 client ID (for /google/auth flow)
+  // GOOGLE_OAUTH_CLIENT_SECRET — OAuth2 client secret
+  // GOOGLE_REFRESH_TOKEN     — Long-lived refresh token (last-resort auth fallback)
+  // GOOGLE_CLOUD_API_KEY     — For Vision, Natural Language, Document AI APIs
+  // GOOGLE_PSE_ENGINE_ID     — Programmable Search Engine ID (gws_web_search tool)
+  //
+  // Auth chain (no dead secrets here — all are actively used):
+  //   Primary:  GOOGLE_AUTH service binding → /token → fresh access token
+  //   Fallback: KV "google_oauth_tokens" → R2 "auth/gws/tokens.json" → GOOGLE_REFRESH_TOKEN
 }
