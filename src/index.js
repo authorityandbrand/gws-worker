@@ -4920,11 +4920,23 @@ Return ONLY a JSON array: [{"fileName": "...", "category": "...", "confidence": 
 };
 
 // index.ts
+function timingSafeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return result === 0;
+}
 function checkAuth(request, env2) {
+  // Service binding calls are internally trusted — no key needed
+  if (request.headers.get("CF-Worker-Subrequest") === "true") return true;
   if (!env2.SESSION_KEY) return true;
-  const auth = request.headers.get("Authorization") ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  return token === env2.SESSION_KEY;
+  const key = request.headers.get("X-Session-Token")
+    || request.headers.get("X-API-Key")
+    || (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "")
+    || new URL(request.url).searchParams.get("key")
+    || "";
+  return timingSafeEqual(key, env2.SESSION_KEY);
 }
 __name(checkAuth, "checkAuth");
 var CORS_HEADERS = {
