@@ -17,6 +17,19 @@ wrangler tail                # Stream live logs
 curl https://gws-worker.authorityandbrand.workers.dev/health  # Verify deployment
 ```
 
+### Post-Deploy SOP (run after every deploy)
+
+```bash
+python3 scripts/mcp-health-check.py --refresh
+```
+
+This checks both `gws-worker` and `gemini-webapi-worker`, verifies all expected tools are present, then calls `clear_cache` on each connector in claude.ai. **Always run with `--refresh` after any change to tool descriptions or `inputSchema`** — claude.ai pins tools by schema hash and silently stops serving tools whose hash no longer matches. `clear_cache` forces it to re-fetch all schemas and issue new hash entries.
+
+Check-only (no cache clear):
+```bash
+python3 scripts/mcp-health-check.py
+```
+
 ## Architecture
 
 Single-file worker (`src/index.js`, ~7,500 lines) with three layers:
