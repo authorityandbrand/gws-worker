@@ -1601,7 +1601,7 @@ ${body}`;
   async getDriveSupportedFormats() {
     const t = await this.token();
     return googleFetch(t, "https://www.googleapis.com/drive/v3/about", {
-      params: { fields: "importFormats,exportFormats" }
+      params: { fields: "user,storageQuota,importFormats,exportFormats" }
     });
   }
   async shareDriveFile(fileId, email, role = "reader", type = "user") {
@@ -2094,11 +2094,11 @@ ${body}`;
       body: { files }
     });
   }
-  async runScriptFunction(scriptId, functionName, parameters) {
+  async runScriptFunction(scriptId, functionName, parameters, devMode = true) {
     const t = await this.token();
     return googleFetch(t, `https://script.googleapis.com/v1/scripts/${scriptId}:run`, {
       method: "POST",
-      body: { function: functionName, parameters: parameters || [] }
+      body: { function: functionName, parameters: parameters || [], devMode }
     });
   }
   async listDeployments(scriptId) {
@@ -4688,6 +4688,10 @@ Return ONLY a JSON array: [{"fileName": "...", "category": "...", "confidence": 
     return googleFetch(t, `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/acl`);
   }
   // ── Gmail Gaps (vacation, delegates, auto-forward, sendAs, batch delete) ──
+  async getGmailVacation() {
+    const t = await this.token();
+    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/settings/vacation");
+  }
   async setGmailVacation(enabled, options) {
     const t = await this.token();
     return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/settings/vacation", {
@@ -6439,13 +6443,14 @@ var TOOLS = [
   },
   {
     name: "script_run",
-    description: "Execute a function in a deployed Apps Script project",
+    description: "Execute a function in an Apps Script project. devMode=true (default) runs the HEAD deployment — use this unless you need a specific published version.",
     inputSchema: {
       type: "object",
       properties: {
         scriptId: { type: "string" },
         functionName: { type: "string" },
-        parameters: { type: "array", description: "Function arguments" }
+        parameters: { type: "array", description: "Function arguments" },
+        devMode: { type: "boolean", description: "Run HEAD deployment (default true). Set false to run the published execution API deployment." }
       },
       required: ["scriptId", "functionName"]
     }
@@ -6606,7 +6611,7 @@ Common params by action:
     name: "gmail",
     description: `Gmail email management.
 
-Actions: search, get, send, draft, get_thread, modify_labels, list_labels, get_attachment, create_filter, list_filters, manage_label, profile, trash, untrash, delete, batch_modify, batch_delete, list_drafts, delete_draft, history, thread_trash, thread_untrash
+Actions: search, get, send, draft, get_thread, modify_labels, list_labels, get_attachment, create_filter, list_filters, manage_label, profile, trash, untrash, delete, batch_modify, batch_delete, list_drafts, delete_draft, history, thread_trash, thread_untrash, vacation, get_vacation, send_as, delegates, add_delegate, remove_delegate
 
 Common params by action:
 - search: query (required, Gmail syntax: from: to: subject: has:attachment label: is:unread after: before:), maxResults
@@ -6627,11 +6632,17 @@ Common params by action:
 - list_drafts: maxResults
 - delete_draft: draftId (required)
 - history: startHistoryId (required), labelId, historyTypes, maxResults
-- thread_trash/thread_untrash: threadId (required)`,
+- thread_trash/thread_untrash: threadId (required)
+- vacation: enabled (bool, required), responseSubject, responseBody, startTime, endTime — set vacation auto-reply
+- get_vacation: (no params) — get current vacation settings
+- send_as: (no params) — list all send-as aliases
+- delegates: (no params) — list email delegates
+- add_delegate: email (required) — add delegate
+- remove_delegate: email (required) — remove delegate`,
     inputSchema: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["search", "get", "send", "draft", "get_thread", "modify_labels", "list_labels", "get_attachment", "create_filter", "list_filters", "manage_label", "profile", "trash", "untrash", "delete", "batch_modify", "batch_delete", "list_drafts", "delete_draft", "history", "thread_trash", "thread_untrash"] },
+        action: { type: "string", enum: ["search", "get", "send", "draft", "get_thread", "modify_labels", "list_labels", "get_attachment", "create_filter", "list_filters", "manage_label", "profile", "trash", "untrash", "delete", "batch_modify", "batch_delete", "list_drafts", "delete_draft", "history", "thread_trash", "thread_untrash", "vacation", "get_vacation", "send_as", "delegates", "add_delegate", "remove_delegate"] },
         query: { type: "string" }, messageId: { type: "string" }, threadId: { type: "string" },
         to: { type: "string" }, subject: { type: "string" }, body: { type: "string" },
         cc: { type: "string" }, bcc: { type: "string" }, isHtml: { type: "boolean" },
@@ -6642,7 +6653,10 @@ Common params by action:
         criteria: { type: "object" }, actions: { type: "object" },
         name: { type: "string" }, labelId: { type: "string" },
         maxResults: { type: "number" }, draftId: { type: "string" },
-        startHistoryId: { type: "string" }, historyTypes: { type: "array" }
+        startHistoryId: { type: "string" }, historyTypes: { type: "array" },
+        enabled: { type: "boolean" }, responseSubject: { type: "string" },
+        responseBody: { type: "string" }, startTime: { type: "string" },
+        endTime: { type: "string" }, email: { type: "string" }
       },
       required: ["action"]
     }
@@ -6891,7 +6905,7 @@ Actions: list, get, get_file, create, update, delete, run, versions, version_get
 - create: title (required), parentId (bind to Doc/Sheet/Form)
 - update: scriptId + files (array of {name, type: SERVER_JS/HTML/JSON, source})
 - delete: scriptId (required)
-- run: scriptId + functionName (required), parameters
+- run: scriptId + functionName (required), parameters, devMode (default true — runs HEAD, set false for published version)
 - versions: scriptId (required)
 - version_get: scriptId + versionNumber (required)
 - version_create: scriptId (required), description
@@ -6908,6 +6922,7 @@ Actions: list, get, get_file, create, update, delete, run, versions, version_get
         scriptId: { type: "string" }, title: { type: "string" }, parentId: { type: "string" },
         fileName: { type: "string" }, functionName: { type: "string" },
         files: { type: "array" }, parameters: { type: "array" },
+        devMode: { type: "boolean", description: "Run HEAD deployment (default true). Set false to require a published execution API deployment." },
         versionNumber: { type: "number" }, deploymentId: { type: "string" },
         description: { type: "string" }
       },
@@ -6985,6 +7000,34 @@ Actions: annotate, ocr
     name: "gws_status",
     description: "Check Google Workspace auth status",
     inputSchema: { type: "object", properties: {} }
+  },
+  {
+    name: "meet",
+    description: `Google Meet conference management.
+
+Actions: create, get, update, end, conferences, participants, recordings, transcripts, transcript_entries
+
+- create: (no required params) config (object: accessType TRUSTED/OPEN/RESTRICTED, entryPointAccess ALL/CREATOR_APP_ONLY)
+- get: spaceName (required, e.g. "spaces/abc123")
+- update: spaceName (required), config (object)
+- end: spaceName (required) — end active conference
+- conferences: filter (optional, e.g. "space.name = 'spaces/abc'") — list conference records
+- participants: conferenceRecord (required, e.g. "conferenceRecords/abc") — list participants
+- recordings: conferenceRecord (required) — list recordings
+- transcripts: conferenceRecord (required) — list transcripts
+- transcript_entries: transcript (required, e.g. "conferenceRecords/x/transcripts/y") — get transcript text`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["create", "get", "update", "end", "conferences", "participants", "recordings", "transcripts", "transcript_entries"] },
+        spaceName: { type: "string" },
+        config: { type: "object" },
+        filter: { type: "string" },
+        conferenceRecord: { type: "string" },
+        transcript: { type: "string" }
+      },
+      required: ["action"]
+    }
   }
 ];
 async function callTool(name, args, gws, env2) {
@@ -7094,8 +7137,10 @@ async function callTool(name, args, gws, env2) {
       );
     case "calendar_delete":
       return gws.deleteCalendarEvent(args.calendarId ?? "primary", args.eventId);
-    case "calendar_freebusy":
-      return gws.queryFreebusy(args.timeMin, args.timeMax, args.calendarIds);
+    case "calendar_freebusy": {
+      const calIds = args.calendarIds ?? args.calendars ?? ["primary"];
+      return gws.queryFreebusy(args.timeMin, args.timeMax, Array.isArray(calIds) ? calIds : [calIds]);
+    }
     // Docs
     case "docs_get":
       return gws.getDocContent(args.documentId);
@@ -7218,6 +7263,18 @@ async function callTool(name, args, gws, env2) {
       return gws.trashGmailThread(args.threadId);
     case "gmail_thread_untrash":
       return gws.untrashGmailThread(args.threadId);
+    case "gmail_vacation":
+      return gws.setGmailVacation(args.enabled, { responseSubject: args.responseSubject, responseBody: args.responseBody, startTime: args.startTime, endTime: args.endTime });
+    case "gmail_get_vacation":
+      return gws.getGmailVacation();
+    case "gmail_send_as":
+      return gws.listGmailSendAs();
+    case "gmail_delegates":
+      return gws.listGmailDelegates();
+    case "gmail_add_delegate":
+      return gws.addGmailDelegate(args.email);
+    case "gmail_remove_delegate":
+      return gws.removeGmailDelegate(args.email);
     // Drive Extended
     case "drive_delete":
       return gws.deleteDriveFile(args.fileId);
@@ -7410,7 +7467,7 @@ async function callTool(name, args, gws, env2) {
     case "script_update":
       return gws.updateScriptContent(args.scriptId, args.files);
     case "script_run":
-      return gws.runScriptFunction(args.scriptId, args.functionName, args.parameters);
+      return gws.runScriptFunction(args.scriptId, args.functionName, args.parameters, args.devMode !== false);
     case "script_versions":
       return gws.listScriptVersions(args.scriptId);
     case "script_version_get":
@@ -7444,6 +7501,25 @@ async function callTool(name, args, gws, env2) {
       const token = await gws.authManager.getAccessToken(env2);
       return { status: "ok", hasToken: !!token, tokenPrefix: token ? token.slice(0, 8) + "..." : null };
     }
+    // Meet
+    case "meet_create":
+      return gws.createMeetSpace(args.config);
+    case "meet_get":
+      return gws.getMeetSpace(args.spaceName);
+    case "meet_update":
+      return gws.updateMeetSpace(args.spaceName, args.config);
+    case "meet_end":
+      return gws.endMeetActiveConference(args.spaceName);
+    case "meet_conferences":
+      return gws.listMeetConferenceRecords(args.filter);
+    case "meet_participants":
+      return gws.listMeetParticipants(args.conferenceRecord);
+    case "meet_recordings":
+      return gws.listMeetRecordings(args.conferenceRecord);
+    case "meet_transcripts":
+      return gws.listMeetTranscripts(args.conferenceRecord);
+    case "meet_transcript_entries":
+      return gws.getMeetTranscriptEntries(args.transcript);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
