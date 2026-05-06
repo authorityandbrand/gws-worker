@@ -2826,6 +2826,81 @@ Content-Type: application/pdf\r
       body: { deploymentConfig: { versionNumber, manifestFileName: "appsscript", description } }
     });
   }
+  // Project metadata (title, parentId, createTime, updateTime) — different from /content
+  async getScriptProjectInfo(scriptId) {
+    const t = await this.token();
+    return googleFetch(t, `https://script.googleapis.com/v1/projects/${scriptId}`);
+  }
+  // Add or replace a single file without overwriting the entire project
+  async addScriptFile(scriptId, name, type, source) {
+    const t = await this.token();
+    const project = await googleFetch(t, `https://script.googleapis.com/v1/projects/${scriptId}/content`);
+    const files = project.files || [];
+    const idx = files.findIndex(f => f.name === name);
+    const fileObj = { name, type: type || "SERVER_JS", source };
+    if (idx >= 0) files[idx] = fileObj; else files.push(fileObj);
+    return googleFetch(t, `https://script.googleapis.com/v1/projects/${scriptId}/content`, {
+      method: "PUT",
+      body: { files }
+    });
+  }
+  // Remove a single file by name (cannot remove appsscript.json manifest)
+  async deleteScriptFile(scriptId, fileName) {
+    if (fileName === "appsscript") throw new Error("Cannot delete the appsscript.json manifest file");
+    const t = await this.token();
+    const project = await googleFetch(t, `https://script.googleapis.com/v1/projects/${scriptId}/content`);
+    const files = (project.files || []).filter(f => f.name !== fileName);
+    if (files.length === project.files?.length) throw new Error(`File '${fileName}' not found in script project`);
+    return googleFetch(t, `https://script.googleapis.com/v1/projects/${scriptId}/content`, {
+      method: "PUT",
+      body: { files }
+    });
+  }
+  // Get the appsscript.json manifest as a parsed object
+  async getScriptManifest(scriptId) {
+    const file = await this.getScriptContent(scriptId, "appsscript");
+    try { return JSON.parse(file.source); } catch { return { raw: file.source }; }
+  }
+  // Replace the appsscript.json manifest (merges with existing by default)
+  async setScriptManifest(scriptId, manifest, merge = true) {
+    const t = await this.token();
+    const project = await googleFetch(t, `https://script.googleapis.com/v1/projects/${scriptId}/content`);
+    const files = project.files || [];
+    const manifestIdx = files.findIndex(f => f.name === "appsscript");
+    let newManifest = manifest;
+    if (merge && manifestIdx >= 0) {
+      try { newManifest = { ...JSON.parse(files[manifestIdx].source), ...manifest }; } catch {}
+    }
+    const manifestFile = { name: "appsscript", type: "JSON", source: JSON.stringify(newManifest, null, 2) };
+    if (manifestIdx >= 0) files[manifestIdx] = manifestFile; else files.unshift(manifestFile);
+    return googleFetch(t, `https://script.googleapis.com/v1/projects/${scriptId}/content`, {
+      method: "PUT",
+      body: { files }
+    });
+  }
+  // Add a single OAuth scope to the manifest (non-destructive)
+  async addScriptScope(scriptId, scope) {
+    const manifest = await this.getScriptManifest(scriptId);
+    const existing = manifest.oauthScopes || [];
+    if (existing.includes(scope)) return { already_present: true, scope, oauthScopes: existing };
+    const updated = { ...manifest, oauthScopes: [...existing, scope] };
+    await this.setScriptManifest(scriptId, updated, false);
+    return { added: true, scope, oauthScopes: updated.oauthScopes };
+  }
+  // Run multiple functions sequentially and collect results
+  async runScriptFunctionBatch(scriptId, calls, devMode = true) {
+    const results = [];
+    for (const call of calls) {
+      try {
+        const r = await this.runScriptFunction(scriptId, call.functionName, call.parameters, devMode);
+        results.push({ functionName: call.functionName, success: true, result: r });
+      } catch (e) {
+        results.push({ functionName: call.functionName, success: false, error: e.message });
+        if (call.stopOnError) break;
+      }
+    }
+    return { results, total: calls.length, succeeded: results.filter(r => r.success).length };
+  }
   async generateTriggerCode(triggerType, functionName, options) {
     const templates = {
       "time": `function createTimeTrigger() {
@@ -6902,36 +6977,64 @@ Actions: list_spaces, get_messages, send
   },
   {
     name: "script",
-    description: `Google Apps Script project management.
+    description: `Google Apps Script project management — full lifecycle: create, edit, run, deploy, manage manifests and files.
 
-Actions: list, get, get_file, create, update, delete, run, versions, version_get, version_create, deployments, deploy, deploy_update, deploy_delete, metrics, processes
+Actions: list, get, get_info, get_file, create, update, add_file, delete_file, delete, run, run_batch, versions, version_get, version_create, deployments, deploy, deploy_update, deploy_delete, metrics, processes, manifest, set_manifest, add_scope, trigger_code
 
-- list: (no params) — list all script projects
-- get: scriptId (required) — get source files
-- get_file: scriptId + fileName (required)
-- create: title (required), parentId (bind to Doc/Sheet/Form)
-- update: scriptId + files (array of {name, type: SERVER_JS/HTML/JSON, source})
-- delete: scriptId (required)
-- run: scriptId + functionName (required), parameters, devMode (default true — runs HEAD, set false for published version)
-- versions: scriptId (required)
+Project CRUD:
+- list: (no params) — list all script projects in Drive
+- get: scriptId (required) — get ALL source files (name, type, source)
+- get_info: scriptId (required) — project metadata only (title, parentId, createTime, updateTime)
+- get_file: scriptId + fileName (required) — get one file by name
+- create: title (required), parentId (optional — bind to Doc/Sheet/Form/Slides)
+- update: scriptId + files (required — array of {name, type: SERVER_JS|HTML|JSON, source}) — REPLACES all files
+- add_file: scriptId + name + source (required), type (SERVER_JS/HTML/JSON, default SERVER_JS) — adds or replaces ONE file, leaves others unchanged
+- delete_file: scriptId + fileName (required) — removes one file, leaves others unchanged
+- delete: scriptId (required) — moves project to trash
+
+Execution:
+- run: scriptId + functionName (required), parameters (array), devMode (default true) — execute a function. devMode=true runs HEAD deployment without requiring a published Execution API deployment.
+- run_batch: scriptId + calls (required — array of {functionName, parameters, stopOnError}), devMode — run multiple functions sequentially, collect results
+
+Versions & Deployments:
+- versions: scriptId (required) — list all versions
 - version_get: scriptId + versionNumber (required)
-- version_create: scriptId (required), description
-- deployments: scriptId (required)
-- deploy: scriptId + versionNumber (required), description
+- version_create: scriptId (required), description — snapshot current HEAD as a new version
+- deployments: scriptId (required) — list all deployments with their URLs
+- deploy: scriptId + versionNumber (required), description — create new deployment (Web App / Execution API / Add-on)
 - deploy_update: scriptId + deploymentId + versionNumber (required), description
 - deploy_delete: scriptId + deploymentId (required)
-- metrics: scriptId (required)
-- processes: (no params)`,
+
+Manifest & Scopes:
+- manifest: scriptId (required) — get parsed appsscript.json manifest object
+- set_manifest: scriptId + manifest (required object), merge (default true — merges with existing instead of replacing)
+- add_scope: scriptId + scope (required — OAuth scope URL, e.g. 'https://www.googleapis.com/auth/calendar') — adds scope to oauthScopes without touching rest of manifest
+
+Trigger Code (Apps Script restriction — triggers CANNOT be created via the Execution API, they must be installed from the editor):
+- trigger_code: triggerType (required: time|calendar|spreadsheet_open|spreadsheet_edit|form_submit) + functionName (required), minuteInterval, calendarId, spreadsheetId — generates ready-to-paste trigger installation code
+
+Observability:
+- metrics: scriptId (required) — execution count, failure count by deployment
+- processes: (no params) — recent script execution history`,
     inputSchema: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["list", "get", "get_file", "create", "update", "delete", "run", "versions", "version_get", "version_create", "deployments", "deploy", "deploy_update", "deploy_delete", "metrics", "processes"] },
+        action: { type: "string", enum: ["list", "get", "get_info", "get_file", "create", "update", "add_file", "delete_file", "delete", "run", "run_batch", "versions", "version_get", "version_create", "deployments", "deploy", "deploy_update", "deploy_delete", "metrics", "processes", "manifest", "set_manifest", "add_scope", "trigger_code"] },
         scriptId: { type: "string" }, title: { type: "string" }, parentId: { type: "string" },
         fileName: { type: "string" }, functionName: { type: "string" },
         files: { type: "array" }, parameters: { type: "array" },
-        devMode: { type: "boolean", description: "Run HEAD deployment (default true). Set false to require a published execution API deployment." },
+        calls: { type: "array", description: "For run_batch: array of {functionName, parameters, stopOnError}" },
+        devMode: { type: "boolean", description: "Run HEAD deployment (default true). Set false to require a published Execution API deployment." },
         versionNumber: { type: "number" }, deploymentId: { type: "string" },
-        description: { type: "string" }
+        description: { type: "string" }, source: { type: "string" },
+        type: { type: "string", enum: ["SERVER_JS", "HTML", "JSON"], description: "File type for add_file (default: SERVER_JS)" },
+        manifest: { type: "object", description: "appsscript.json manifest object for set_manifest" },
+        merge: { type: "boolean", description: "For set_manifest: merge with existing manifest (default true)" },
+        scope: { type: "string", description: "OAuth scope URL for add_scope" },
+        triggerType: { type: "string", enum: ["time", "calendar", "spreadsheet_open", "spreadsheet_edit", "form_submit"], description: "Trigger type for trigger_code" },
+        minuteInterval: { type: "number", description: "For time triggers: interval in minutes" },
+        calendarId: { type: "string", description: "For calendar triggers" },
+        spreadsheetId: { type: "string", description: "For spreadsheet triggers" }
       },
       required: ["action"]
     }
@@ -7508,6 +7611,22 @@ async function callTool(name, args, gws, env2) {
       return gws.getScriptMetrics(args.scriptId);
     case "script_processes":
       return gws.listScriptProcesses();
+    case "script_get_info":
+      return gws.getScriptProjectInfo(args.scriptId);
+    case "script_add_file":
+      return gws.addScriptFile(args.scriptId, args.name, args.type, args.source);
+    case "script_delete_file":
+      return gws.deleteScriptFile(args.scriptId, args.fileName);
+    case "script_manifest":
+      return gws.getScriptManifest(args.scriptId);
+    case "script_set_manifest":
+      return gws.setScriptManifest(args.scriptId, args.manifest, args.merge !== false);
+    case "script_add_scope":
+      return gws.addScriptScope(args.scriptId, args.scope);
+    case "script_run_batch":
+      return gws.runScriptFunctionBatch(args.scriptId, args.calls, args.devMode !== false);
+    case "script_trigger_code":
+      return gws.generateTriggerCode(args.triggerType, args.functionName, args);
     // Search
     case "web_search":
       return gws.customSearch(args.query, {
