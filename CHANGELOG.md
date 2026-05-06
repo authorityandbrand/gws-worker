@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [2026-05-07]
+
+### Added
+- **Drive Labels actions** — Wired 6 new actions to the `drive` grouped tool: `labels` (list all), `get_label`, `create_label`, `apply_label` (attach label to file with field values), `file_labels` (list labels on a file), `remove_label`. Backed by existing `GoogleWorkspaceClient` methods (lines 4826–4858). Requires `drive.labels` scope re-auth.
+- **`drive.labels` OAuth scope** — Added to `google-auth-worker` `GOOGLE_SCOPES` and re-deployed; new re-auth via `/auth` will include Drive Labels access.
+- **Meet OAuth scopes** — Added `meetings.space.created` and `meetings.space.readonly` to `google-auth-worker`; wired Meet tool from prior session now has correct scope grant on next re-auth.
+
+### Fixed
+- **Drive Labels inputSchema** — Added `labelId`, `labelType`, `fields` params to `drive` tool's inputSchema properties.
+
 ## [2026-05-06]
 
 ### Added

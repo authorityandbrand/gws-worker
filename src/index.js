@@ -6560,7 +6560,7 @@ var GROUPED_TOOLS = [
     name: "drive",
     description: `Google Drive file management.
 
-Actions: search, list, get, create, copy, share, get_link, export, delete, update, metadata, permissions, about, download, revisions, folder, move, batch_move, shortcut, comments, add_comment, reply_comment, resolve_comment, activity, extract_text, changes_token, changes
+Actions: search, list, get, create, copy, share, get_link, export, delete, update, metadata, permissions, about, download, revisions, folder, move, batch_move, shortcut, comments, add_comment, reply_comment, resolve_comment, activity, extract_text, changes_token, changes, labels, get_label, create_label, apply_label, file_labels, remove_label
 
 Common params by action:
 - search: query (required), maxResults, driveId, folderId
@@ -6588,11 +6588,17 @@ Common params by action:
 - activity: itemName, ancestorName, filter, pageSize
 - extract_text: fileId (required) — OCR/text extraction
 - changes_token: (no params) — get start token for change tracking
-- changes: pageToken (required), pageSize`,
+- changes: pageToken (required), pageSize
+- labels: (no params) — list all Drive Labels in the domain
+- get_label: labelId (required) — get a Drive Label by ID
+- create_label: name (required), labelType (ADMIN/SHARED), fields (object)
+- apply_label: fileId (required), labelId (required), fields (object of field values)
+- file_labels: fileId (required) — list labels applied to a file
+- remove_label: fileId (required), labelId (required) — remove label from file`,
     inputSchema: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["search", "list", "get", "create", "copy", "share", "get_link", "export", "delete", "update", "metadata", "permissions", "about", "download", "revisions", "folder", "move", "batch_move", "shortcut", "comments", "add_comment", "reply_comment", "resolve_comment", "activity", "extract_text", "changes_token", "changes"] },
+        action: { type: "string", enum: ["search", "list", "get", "create", "copy", "share", "get_link", "export", "delete", "update", "metadata", "permissions", "about", "download", "revisions", "folder", "move", "batch_move", "shortcut", "comments", "add_comment", "reply_comment", "resolve_comment", "activity", "extract_text", "changes_token", "changes", "labels", "get_label", "create_label", "apply_label", "file_labels", "remove_label"] },
         fileId: { type: "string" }, query: { type: "string" }, name: { type: "string" },
         content: { type: "string" }, mimeType: { type: "string" }, folderId: { type: "string" },
         maxResults: { type: "number" }, email: { type: "string" }, role: { type: "string" },
@@ -6602,7 +6608,8 @@ Common params by action:
         commentId: { type: "string" }, pageToken: { type: "string" }, pageSize: { type: "number" },
         moves: { type: "array" }, orderBy: { type: "string" }, driveId: { type: "string" },
         itemName: { type: "string" }, ancestorName: { type: "string" }, filter: { type: "string" },
-        includeSubfolders: { type: "boolean" }
+        includeSubfolders: { type: "boolean" },
+        labelId: { type: "string" }, labelType: { type: "string" }, fields: { type: "object" }
       },
       required: ["action"]
     }
@@ -7407,6 +7414,19 @@ async function callTool(name, args, gws, env2) {
       return gws.getDriveStartPageToken();
     case "drive_changes":
       return gws.listDriveChanges(args.pageToken, { pageSize: args.pageSize });
+    // Drive Labels
+    case "drive_labels":
+      return gws.listDriveLabels();
+    case "drive_get_label":
+      return gws.getDriveLabel(args.labelId);
+    case "drive_create_label":
+      return gws.createDriveLabel(args.name, args.labelType, args.fields);
+    case "drive_apply_label":
+      return gws.applyLabelToFile(args.fileId, args.labelId, args.fields);
+    case "drive_file_labels":
+      return gws.listFileLabels(args.fileId);
+    case "drive_remove_label":
+      return gws.removeLabelFromFile(args.fileId, args.labelId);
     // Gemini AI
     case "gemini_generate":
       return gws.geminiGenerate(args.prompt, {
