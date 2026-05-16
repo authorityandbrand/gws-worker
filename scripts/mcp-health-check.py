@@ -63,6 +63,38 @@ SERVERS = [
             "vision", "web_search", "gws_status",
         ],
     },
+    {
+        "name": "brain",
+        "uuid": "00012a45-6f1b-4496-84ef-5cfabd02d873",
+        "url": "https://claude-brain.authorityandbrand.workers.dev",
+        "cf_name": "claude-brain",
+        "expected_tools": [
+            "chats", "projects", "kb_docs", "agents", "skills", "kv_doc_table",
+            "d1", "workflows", "pipeline", "ai_gateway", "ai_search", "storage",
+            "vector_search", "services", "queues", "teams", "infrastructure",
+            "webhooks", "workers", "cf_api", "graph", "artifacts", "notebooklm_registry",
+        ],
+    },
+    {
+        "name": "Browser",
+        "uuid": "8a2dc8d4-3922-456f-adf0-5d2b4f06d263",
+        "url": "https://browser-auth-worker.authorityandbrand.workers.dev/custom-mcp",
+        "cf_name": "browser-auth-worker",
+        "expected_tools": [
+            "quick", "authenticated_fetch", "claude_bootstrap", "claude_mcp_servers",
+            "claude_sessions", "claude_skills", "claude_memory",
+        ],
+    },
+    {
+        "name": "Nguyen API",
+        "uuid": "f67ff5ef-91a9-40c9-92c2-dcb0e57d65bd",
+        "url": "https://nguyen-case-api.authorityandbrand.workers.dev",
+        "cf_name": "nguyen-case-api",
+        "expected_tools": [
+            "case", "violations", "findings", "timeline", "knowledge",
+            "exec", "agents", "documents",
+        ],
+    },
 ]
 
 PASS = "✓"
