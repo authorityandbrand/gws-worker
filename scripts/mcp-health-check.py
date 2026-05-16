@@ -78,11 +78,13 @@ SERVERS = [
     {
         "name": "Browser",
         "uuid": "8a2dc8d4-3922-456f-adf0-5d2b4f06d263",
-        "url": "https://browser-auth-worker.authorityandbrand.workers.dev/custom-mcp",
+        "url": "https://browser-auth-worker.authorityandbrand.workers.dev",
+        "mcp_path": "/custom-mcp",
         "cf_name": "browser-auth-worker",
         "expected_tools": [
             "quick", "authenticated_fetch", "claude_bootstrap", "claude_mcp_servers",
-            "claude_sessions", "claude_skills", "claude_memory",
+            "claude_session_status", "claude_session_refresh", "claude_skills", "claude_memory",
+            "claude_projects", "claude_team_list", "decision_tree",
         ],
     },
     {
@@ -146,7 +148,7 @@ def check_health(server):
     data, err = curl("GET", f"{server['url']}/health")
     if err or not data:
         return False, f"no response: {err}"
-    if data.get("status") != "ok":
+    if data.get("status") not in ("ok", "healthy"):
         return False, f"status={data.get('status')} {json.dumps(data)[:100]}"
     detail = []
     if "tools" in data:
@@ -157,7 +159,8 @@ def check_health(server):
     return True, "  ".join(detail)
 
 def check_tools_list(server):
-    data, err = curl("POST", f"{server['url']}/mcp",
+    mcp_url = server["url"] + server.get("mcp_path", "/mcp")
+    data, err = curl("POST", mcp_url,
                      body={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
     if err or not data:
         return None, set(), set(), f"no response: {err}"
@@ -202,7 +205,8 @@ def run_diagnostics(server, secret):
         print(f"       created={reg.get('created_at','?')[:10]}  updated={reg.get('updated_at','?')[:10]}")
 
     # 2. Raw MCP initialize check
-    data, err = curl("POST", f"{server['url']}/mcp",
+    mcp_url = server["url"] + server.get("mcp_path", "/mcp")
+    data, err = curl("POST", mcp_url,
                      body={"jsonrpc": "2.0", "id": 1, "method": "initialize",
                            "params": {"protocolVersion": "2025-03-26",
                                       "capabilities": {}, "clientInfo": {"name": "health-check"}}})
