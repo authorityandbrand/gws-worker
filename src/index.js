@@ -906,143 +906,81 @@ globalThis.process = process_default;
 var R2_GWS_PATH = "auth/gws/tokens.json";
 var GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 var GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+// CF AI Gateway — all generativelanguage.googleapis.com calls route through here for
+// observability, rate-limiting, and usage tracking. OAuth Bearer tokens pass through
+// unchanged. Falls back to direct Google endpoint on 5xx responses.
+var GEMINI_DIRECT_BASE = "https://generativelanguage.googleapis.com";
+var GEMINI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/e105d76aa6c851abdbd13d34d901cc7c/automation-hub/google-ai-studio";
 var GOOGLE_SCOPES = [
-  // --- Identity ---
+  // Identity
   "openid",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
-  // --- Gmail (case correspondence) ---
+  // Gmail (case correspondence)
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.modify",
   "https://www.googleapis.com/auth/gmail.compose",
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/gmail.labels",
   "https://www.googleapis.com/auth/gmail.settings.basic",
-  // --- Calendar (court dates, deadlines) ---
+  // Calendar (court dates, deadlines)
   "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/calendar.settings.readonly",
-  // --- Drive (case file storage) ---
+  // Drive (case file storage + PDF downloads)
   "https://www.googleapis.com/auth/drive",
   "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/drive.readonly",
   "https://www.googleapis.com/auth/drive.metadata.readonly",
   "https://www.googleapis.com/auth/drive.appdata",
   "https://www.googleapis.com/auth/drive.activity.readonly",
-  // --- Docs / Sheets / Slides (legal documents, billing, court presentations) ---
+  "https://www.googleapis.com/auth/drive.labels",
+  // Docs / Sheets / Slides
   "https://www.googleapis.com/auth/documents",
   "https://www.googleapis.com/auth/documents.readonly",
   "https://www.googleapis.com/auth/spreadsheets",
   "https://www.googleapis.com/auth/spreadsheets.readonly",
   "https://www.googleapis.com/auth/presentations",
   "https://www.googleapis.com/auth/presentations.readonly",
-  // --- Forms (client intake) ---
+  // Forms
   "https://www.googleapis.com/auth/forms.body",
   "https://www.googleapis.com/auth/forms.body.readonly",
   "https://www.googleapis.com/auth/forms.responses.readonly",
-  // --- Tasks (deadline tracking) ---
+  // Tasks
   "https://www.googleapis.com/auth/tasks",
   "https://www.googleapis.com/auth/tasks.readonly",
-  // --- Contacts / People (clients, opposing counsel) ---
+  // Contacts / People
   "https://www.googleapis.com/auth/contacts",
   "https://www.googleapis.com/auth/contacts.readonly",
   "https://www.googleapis.com/auth/directory.readonly",
-  // --- Google Meet (client video meetings) ---
+  // Meet
   "https://www.googleapis.com/auth/meetings.space.readonly",
   "https://www.googleapis.com/auth/meetings.space.created",
-  // --- Admin SDK (org structure lookup + directory management) ---
-  "https://www.googleapis.com/auth/admin.directory.user.readonly",
-  "https://www.googleapis.com/auth/admin.directory.group.readonly",
-  "https://www.googleapis.com/auth/admin.directory.orgunit.readonly",
-  "https://www.googleapis.com/auth/admin.directory.domain.readonly",
-  // --- Google Cloud Platform ---
-  // Single scope covers: Vertex AI, NotebookLM (Discovery Engine),
-  // Document AI, Cloud Vision, Speech, Translation, Natural Language, etc.
-  "https://www.googleapis.com/auth/cloud-platform",
-  // cloud-platform covers Gemini generateContent; generative-language.* are sub-scopes for tuning/retrieval
-  "https://www.googleapis.com/auth/generative-language.tuning",
-  "https://www.googleapis.com/auth/generative-language.retriever",
-  // --- Blogger ---
-  "https://www.googleapis.com/auth/blogger",
-  "https://www.googleapis.com/auth/blogger.readonly",
-  // --- Google Search Console ---
-  "https://www.googleapis.com/auth/webmasters",
-  "https://www.googleapis.com/auth/webmasters.readonly",
-  // --- Google Tag Manager ---
-  "https://www.googleapis.com/auth/tagmanager.readonly",
-  "https://www.googleapis.com/auth/tagmanager.edit.containers",
-  "https://www.googleapis.com/auth/tagmanager.manage.accounts",
-  "https://www.googleapis.com/auth/tagmanager.publish",
-  // --- Google Ads ---
-  "https://www.googleapis.com/auth/adwords",
-  // --- Google Cloud Storage ---
-  "https://www.googleapis.com/auth/devstorage.full_control",
-  "https://www.googleapis.com/auth/devstorage.read_write",
-  // --- Pub/Sub ---
-  "https://www.googleapis.com/auth/pubsub",
-  // --- BigQuery ---
-  "https://www.googleapis.com/auth/bigquery",
-  "https://www.googleapis.com/auth/bigquery.readonly",
-  // --- Cloud Logging & Monitoring ---
-  "https://www.googleapis.com/auth/logging.read",
-  "https://www.googleapis.com/auth/logging.write",
-  "https://www.googleapis.com/auth/monitoring",
-  "https://www.googleapis.com/auth/monitoring.read",
-  "https://www.googleapis.com/auth/monitoring.write",
-  // --- Firebase ---
-  "https://www.googleapis.com/auth/firebase",
-  "https://www.googleapis.com/auth/firebase.readonly",
-  // --- Cloud Translation ---
-  "https://www.googleapis.com/auth/cloud-translation",
-  // --- Cloud Vision ---
-  "https://www.googleapis.com/auth/cloud-vision",
-  // --- Cloud Speech-to-Text / Text-to-Speech ---
-  "https://www.googleapis.com/auth/cloud-speech",
-  // --- Cloud Natural Language ---
-  "https://www.googleapis.com/auth/cloud-language",
-  // --- Google Chat (chat.bot removed — requires Chat app approval, not for standard OAuth) ---
+  // Chat
   "https://www.googleapis.com/auth/chat.messages",
   "https://www.googleapis.com/auth/chat.spaces",
   "https://www.googleapis.com/auth/chat.memberships",
-  // --- Apps Script ---
+  // Apps Script
   "https://www.googleapis.com/auth/script.projects",
   "https://www.googleapis.com/auth/script.deployments",
   "https://www.googleapis.com/auth/script.metrics",
   "https://www.googleapis.com/auth/script.processes",
   "https://www.googleapis.com/auth/script.external_request",
-  // --- Custom Search Engine ---
-  "https://www.googleapis.com/auth/cse",
-  // --- Google Books ---
-  "https://www.googleapis.com/auth/books",
-  // --- Google Site Verification ---
-  "https://www.googleapis.com/auth/siteverification",
-  "https://www.googleapis.com/auth/siteverification.verify_only",
-  // --- AdSense ---
-  "https://www.googleapis.com/auth/adsense",
-  "https://www.googleapis.com/auth/adsense.readonly",
-  // --- Google Play (Android) ---
-  "https://www.googleapis.com/auth/androidpublisher",
-  // --- Google Datastore ---
-  "https://www.googleapis.com/auth/datastore",
-  // --- Cloud DNS ---
-  "https://www.googleapis.com/auth/ndev.clouddns.readwrite",
-  "https://www.googleapis.com/auth/ndev.clouddns.readonly",
-  // --- Compute Engine ---
-  "https://www.googleapis.com/auth/compute",
-  "https://www.googleapis.com/auth/compute.readonly",
-  // --- Source Repositories ---
-  "https://www.googleapis.com/auth/source.read_only",
-  "https://www.googleapis.com/auth/source.read_write",
-  // --- Service Management ---
-  "https://www.googleapis.com/auth/service.management",
-  "https://www.googleapis.com/auth/service.management.readonly",
-  "https://www.googleapis.com/auth/servicecontrol",
-  // --- NotebookLM / Discovery Engine ---
-  // cloud-platform scope alone is insufficient for NotebookLM Enterprise v1alpha API.
-  // The explicit discoveryengine scopes are required for OAuth token access.
-  "https://www.googleapis.com/auth/discoveryengine.readwrite",
-  "https://www.googleapis.com/auth/apps.licensing"
+  // Cloud Platform (covers Vertex AI, Document AI, Vision, Speech, NL, Translation)
+  "https://www.googleapis.com/auth/cloud-platform",
+  "https://www.googleapis.com/auth/generative-language.tuning",
+  "https://www.googleapis.com/auth/generative-language.retriever",
+  // BigQuery
+  "https://www.googleapis.com/auth/bigquery",
+  // Apps Script extras (live token grants these)
+  "https://www.googleapis.com/auth/script.scriptapp",
+  // Firebase (live token grants this)
+  "https://www.googleapis.com/auth/firebase",
+  // NotebookLM — requires re-auth to activate; cloud-platform alone insufficient
+  // "https://www.googleapis.com/auth/discoveryengine.readwrite", // NOT in live token yet
+  // Chat memberships — requires re-auth to activate
+  // "https://www.googleapis.com/auth/chat.memberships", // NOT in live token yet
 ].join(" ");
 var GoogleOAuthManager = class {
   static {
@@ -1054,6 +992,28 @@ var GoogleOAuthManager = class {
     this.kv = env2.CACHE;
     this.r2 = env2.R2_AUTH;
     this.profile = (profile3 || "default").replace(/[^a-zA-Z0-9_-]/g, "") || "default";
+    this._shortsaleCache = null;
+  }
+  // Get access token for shortsaledfw@gmail.com using its dedicated refresh token secret.
+  // Uses SHORTSALE_CLIENT_ID/SHORTSALE_CLIENT_SECRET if set (preferred), else GOOGLE_OAUTH_CLIENT_*
+  async getShortsaleToken(env2) {
+    if (this._shortsaleCache && Date.now() < this._shortsaleCache.expires_at) {
+      return this._shortsaleCache.access_token;
+    }
+    const refreshToken = env2.GOOGLE_REFRESH_TOKEN_SHORTSALE || env2.SHORTSALE_REFRESH_TOKEN;
+    if (!refreshToken) throw new Error("No shortsale refresh token configured (GOOGLE_REFRESH_TOKEN_SHORTSALE or SHORTSALE_REFRESH_TOKEN)");
+    const clientId = env2.SHORTSALE_CLIENT_ID || this.clientId || env2.GOOGLE_OAUTH_CLIENT_ID;
+    const clientSecret = env2.SHORTSALE_CLIENT_SECRET || this.clientSecret || env2.GOOGLE_OAUTH_CLIENT_SECRET;
+    if (!clientId || !clientSecret) throw new Error("Missing OAuth client credentials for shortsale account");
+    const resp = await fetch(GOOGLE_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ refresh_token: refreshToken, client_id: clientId, client_secret: clientSecret, grant_type: "refresh_token" }),
+    });
+    const data = await resp.json();
+    if (!data.access_token) throw new Error(`Shortsale token refresh failed: ${data.error}: ${data.error_description || JSON.stringify(data)}`);
+    this._shortsaleCache = { access_token: data.access_token, expires_at: Date.now() + (data.expires_in || 3600) * 1000 - 60000 };
+    return data.access_token;
   }
   /** KV key for this profile's OAuth tokens */
   get kvKey() {
@@ -1199,7 +1159,15 @@ var GoogleOAuthManager = class {
         _source: "direct"
       };
     });
-    const newToken = await Promise.any([googleAuthPromise, directFetchPromise]);
+    let newToken;
+    try {
+      newToken = await Promise.any([googleAuthPromise, directFetchPromise]);
+    } catch (err) {
+      const errors = err instanceof AggregateError
+        ? err.errors.map((e, i) => `[source${i}]: ${e?.message || e}`)
+        : [String(err)];
+      throw new Error(`Failed to get access token. All sources failed: ${errors.join(' | ')}`);
+    }
     this.cachedToken = { access_token: newToken.access_token, expires_at: newToken.expires_at };
     // Update R2 only when the direct path won — google-auth-worker owns google_oauth_tokens in KV.
     if (newToken._source === "direct" && this.r2) {
@@ -1219,7 +1187,13 @@ var GoogleOAuthManager = class {
   }
 };
 async function googleFetch(accessToken, url, options = {}) {
-  const fullUrl = new URL(url);
+  // Route generativelanguage.googleapis.com calls through CF AI Gateway for
+  // observability and rate-limit management. Falls back to direct endpoint on 5xx.
+  const isGeminiUrl = url.startsWith(GEMINI_DIRECT_BASE);
+  const effectiveUrl = isGeminiUrl
+    ? url.replace(GEMINI_DIRECT_BASE, GEMINI_GATEWAY_URL)
+    : url;
+  const fullUrl = new URL(effectiveUrl);
   if (options.params) {
     for (const [k, v] of Object.entries(options.params)) {
       if (v !== void 0 && v !== null && v !== "") fullUrl.searchParams.set(k, v);
@@ -1232,11 +1206,22 @@ async function googleFetch(accessToken, url, options = {}) {
   if (options.body && !options.headers?.["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
-  const resp = await fetch(fullUrl.toString(), {
+  const fetchOptions = {
     method: options.method || "GET",
     headers,
     body: options.body ? typeof options.body === "string" ? options.body : JSON.stringify(options.body) : void 0
-  });
+  };
+  let resp = await fetch(fullUrl.toString(), fetchOptions);
+  // If gateway returns 5xx, fall back to direct Google endpoint
+  if (isGeminiUrl && resp.status >= 500) {
+    const directUrl = new URL(url);
+    if (options.params) {
+      for (const [k, v] of Object.entries(options.params)) {
+        if (v !== void 0 && v !== null && v !== "") directUrl.searchParams.set(k, v);
+      }
+    }
+    resp = await fetch(directUrl.toString(), fetchOptions);
+  }
   if (!resp.ok) {
     const errText = await resp.text();
     throw new Error(`Google API error ${resp.status}: ${errText}`);
@@ -1260,11 +1245,22 @@ var GoogleWorkspaceClient = class _GoogleWorkspaceClient {
   constructor(env2) {
     this.env = env2;
     this.oauth = new GoogleOAuthManager(env2);
+    this._gmailUserId = 'me';
+    this._gmailTokenOverride = null;
+  }
+  // Set the Gmail account to act as — must be a delegate or have its own refresh token.
+  setGmailAccount(userId) {
+    this._gmailUserId = userId || 'me';
+  }
+  // Override the access token used for Gmail API calls (e.g. shortsale dedicated token).
+  setGmailTokenOverride(token) {
+    this._gmailTokenOverride = token || null;
   }
   get authManager() {
     return this.oauth;
   }
   async token() {
+    if (this._gmailTokenOverride) return this._gmailTokenOverride;
     return this.oauth.getAccessToken(this.env);
   }
   // ============================================
@@ -1272,13 +1268,13 @@ var GoogleWorkspaceClient = class _GoogleWorkspaceClient {
   // ============================================
   async searchGmailMessages(query, maxResults = 20) {
     const t = await this.token();
-    const data = await googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/messages", {
+    const data = await googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages`, {
       params: { q: query, maxResults: String(maxResults) }
     });
     if (!data.messages || data.messages.length === 0) return { messages: [], resultSizeEstimate: 0 };
     const messages = await Promise.all(
       data.messages.slice(0, maxResults).map(async (m) => {
-        const msg = await googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}`, {
+        const msg = await googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages/${m.id}`, {
           params: { format: "metadata", metadataHeaders: "Subject,From,To,Date" }
         });
         return {
@@ -1297,7 +1293,7 @@ var GoogleWorkspaceClient = class _GoogleWorkspaceClient {
   }
   async getGmailMessage(messageId, format = "full") {
     const t = await this.token();
-    const msg = await googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}`, {
+    const msg = await googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages/${messageId}`, {
       params: { format }
     });
     if (format === "full" && msg.payload) {
@@ -1349,7 +1345,7 @@ ${options.htmlBody}`;
 ${body}`;
     }
     const encoded = btoa(unescape(encodeURIComponent(raw))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages/send`, {
       method: "POST",
       body: { raw: encoded, ...options?.threadId ? { threadId: options.threadId } : {} }
     });
@@ -1373,27 +1369,27 @@ ${options.htmlBody}`;
 ${body}`;
     }
     const encoded = btoa(unescape(encodeURIComponent(raw))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/drafts", {
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/drafts`, {
       method: "POST",
       body: { message: { raw: encoded } }
     });
   }
   async getGmailThread(threadId) {
     const t = await this.token();
-    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}`, {
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/threads/${threadId}`, {
       params: { format: "full" }
     });
   }
   async modifyGmailLabels(messageId, addLabels, removeLabels) {
     const t = await this.token();
-    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages/${messageId}/modify`, {
       method: "POST",
       body: { addLabelIds: addLabels || [], removeLabelIds: removeLabels || [] }
     });
   }
   async listGmailLabels() {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/labels");
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/labels`);
   }
   // ============================================
   // GOOGLE CALENDAR
@@ -2149,21 +2145,21 @@ ${body}`;
   // ============================================
   async batchModifyGmailLabels(messageIds, addLabels, removeLabels) {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify", {
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages/batchModify`, {
       method: "POST",
       body: { ids: messageIds, addLabelIds: addLabels || [], removeLabelIds: removeLabels || [] }
     });
   }
   async createGmailFilter(criteria, action) {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/settings/filters", {
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/settings/filters`, {
       method: "POST",
       body: { criteria, action }
     });
   }
   async deleteGmailFilter(filterId) {
     const t = await this.token();
-    const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/settings/filters/${filterId}`, {
+    const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/settings/filters/${filterId}`, {
       method: "DELETE",
       headers: { "Authorization": `Bearer ${t}` }
     });
@@ -2172,22 +2168,22 @@ ${body}`;
   }
   async listGmailFilters() {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/settings/filters");
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/settings/filters`);
   }
   async manageGmailLabel(action, options) {
     const t = await this.token();
     if (action === "create") {
-      return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/labels", {
+      return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/labels`, {
         method: "POST",
         body: { name: options.name, labelListVisibility: options.labelListVisibility || "labelShow", messageListVisibility: options.messageListVisibility || "show" }
       });
     } else if (action === "update") {
-      return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/labels/${options.id}`, {
+      return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/labels/${options.id}`, {
         method: "PATCH",
         body: { name: options.name, labelListVisibility: options.labelListVisibility, messageListVisibility: options.messageListVisibility }
       });
     } else {
-      const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/labels/${options.id}`, {
+      const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/labels/${options.id}`, {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${t}` }
       });
@@ -2197,18 +2193,18 @@ ${body}`;
   }
   async getGmailAttachment(messageId, attachmentId) {
     const t = await this.token();
-    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${attachmentId}`);
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages/${messageId}/attachments/${attachmentId}`);
   }
   async getGmailMessagesBatch(messageIds, format = "full") {
     const t = await this.token();
     return Promise.all(messageIds.map(
-      (id) => googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`, { params: { format } })
+      (id) => googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages/${id}`, { params: { format } })
     ));
   }
   async getGmailThreadsBatch(threadIds) {
     const t = await this.token();
     return Promise.all(threadIds.map(
-      (id) => googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/threads/${id}`, { params: { format: "full" } })
+      (id) => googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/threads/${id}`, { params: { format: "full" } })
     ));
   }
   // ============================================
@@ -2243,6 +2239,32 @@ ${body}`;
       params: { fields: "id,name,mimeType,webContentLink,exportLinks" }
     });
     return meta;
+  }
+  async getDriveFileBytes(fileId) {
+    const t = await this.token();
+    const meta = await googleFetch(t, `https://www.googleapis.com/drive/v3/files/${fileId}`, {
+      params: { fields: "id,name,mimeType,size" }
+    });
+    const resp = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      { headers: { Authorization: `Bearer ${t}` } }
+    );
+    if (!resp.ok) throw new Error(`Drive download failed: ${resp.status} ${resp.statusText}`);
+    const buf = await resp.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let b64 = "";
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      b64 += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    return {
+      fileId,
+      name: meta.name,
+      mimeType: meta.mimeType || resp.headers.get("content-type") || "application/octet-stream",
+      encoding: "base64",
+      sizeBytes: buf.byteLength,
+      data: btoa(b64),
+    };
   }
   async getDriveFilePermissions(fileId) {
     const t = await this.token();
@@ -3559,10 +3581,18 @@ Content-Type: application/pdf\r
   }
   async deleteNotebookCorpus(corpusName, force = false) {
     const t = await this.token();
-    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/${corpusName}?force=${force}`, {
+    const directUrl = `${GEMINI_DIRECT_BASE}/v1beta/${corpusName}?force=${force}`;
+    const gatewayUrl = directUrl.replace(GEMINI_DIRECT_BASE, GEMINI_GATEWAY_URL);
+    let resp = await fetch(gatewayUrl, {
       method: "DELETE",
       headers: { "Authorization": `Bearer ${t}` }
     });
+    if (resp.status >= 500) {
+      resp = await fetch(directUrl, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${t}` }
+      });
+    }
     if (!resp.ok && resp.status !== 204) throw new Error(`Delete corpus failed: ${resp.status}`);
     return { deleted: true };
   }
@@ -3887,7 +3917,9 @@ Content-Type: application/pdf\r
   // ============================================
   async geminiUploadFile(displayName, mimeType, data) {
     const t = await this.token();
-    const initResp = await fetch("https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=resumable", {
+    const uploadInitDirect = `${GEMINI_DIRECT_BASE}/upload/v1beta/files?uploadType=resumable`;
+    const uploadInitGateway = uploadInitDirect.replace(GEMINI_DIRECT_BASE, GEMINI_GATEWAY_URL);
+    const initFetchOptions = {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${t}`,
@@ -3897,7 +3929,11 @@ Content-Type: application/pdf\r
         "X-Goog-Upload-Header-Content-Type": mimeType
       },
       body: JSON.stringify({ file: { displayName } })
-    });
+    };
+    let initResp = await fetch(uploadInitGateway, initFetchOptions);
+    if (initResp.status >= 500) {
+      initResp = await fetch(uploadInitDirect, initFetchOptions);
+    }
     const uploadUrl = initResp.headers.get("x-goog-upload-url");
     if (!uploadUrl) throw new Error("Failed to get upload URL");
     const uploadResp = await fetch(uploadUrl, {
@@ -3922,10 +3958,18 @@ Content-Type: application/pdf\r
   }
   async geminiDeleteFile(fileName) {
     const t = await this.token();
-    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}`, {
+    const directUrl = `${GEMINI_DIRECT_BASE}/v1beta/${fileName}`;
+    const gatewayUrl = directUrl.replace(GEMINI_DIRECT_BASE, GEMINI_GATEWAY_URL);
+    let resp = await fetch(gatewayUrl, {
       method: "DELETE",
       headers: { "Authorization": `Bearer ${t}` }
     });
+    if (resp.status >= 500) {
+      resp = await fetch(directUrl, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${t}` }
+      });
+    }
     if (!resp.ok && resp.status !== 204) throw new Error(`Delete file failed: ${resp.status}`);
     return { deleted: true };
   }
@@ -4241,11 +4285,11 @@ Content-Type: application/pdf\r
     if (options?.labelId) params.labelId = options.labelId;
     if (options?.historyTypes) params.historyTypes = options.historyTypes.join(",");
     if (options?.maxResults) params.maxResults = String(options.maxResults);
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/history", { params });
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/history`, { params });
   }
   async getGmailProfile() {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/profile");
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/profile`);
   }
   // ============================================
   // DRIVE REVISIONS (version history)
@@ -4340,13 +4384,16 @@ Content-Type: application/pdf\r
     } catch (oauthErr) {
       const apiKey = this.env.GEMINI_API_KEY;
       if (!apiKey) throw oauthErr;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const directUrl = `${GEMINI_DIRECT_BASE}/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const gatewayUrl = directUrl.replace(GEMINI_DIRECT_BASE, GEMINI_GATEWAY_URL);
       const body = { contents, generationConfig: {} };
       if (options?.systemInstruction) body.systemInstruction = { parts: [{ text: options.systemInstruction }] };
       if (options?.temperature !== void 0) body.generationConfig.temperature = options.temperature;
       if (options?.maxTokens) body.generationConfig.maxOutputTokens = options.maxTokens;
       if (options?.groundingWithSearch) body.tools = [{ googleSearch: {} }];
-      const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const apiFetchOptions = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+      let resp = await fetch(gatewayUrl, apiFetchOptions);
+      if (resp.status >= 500) resp = await fetch(directUrl, apiFetchOptions);
       if (!resp.ok) throw new Error(`Gemini API error ${resp.status}: ${await resp.text()}`);
       const data = await resp.json();
       const candidate = data.candidates?.[0];
@@ -4640,7 +4687,7 @@ Return ONLY a JSON array: [{"fileName": "...", "category": "...", "confidence": 
   /** Start watching Gmail for changes via Pub/Sub push notifications */
   async watchGmail(topicName, labelIds) {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/watch", {
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/watch`, {
       method: "POST",
       body: {
         topicName,
@@ -4652,7 +4699,7 @@ Return ONLY a JSON array: [{"fileName": "...", "category": "...", "confidence": 
   /** Stop watching Gmail */
   async stopGmailWatch() {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/stop", {
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/stop`, {
       method: "POST"
     });
   }
@@ -4765,53 +4812,53 @@ Return ONLY a JSON array: [{"fileName": "...", "category": "...", "confidence": 
   // ── Gmail Gaps (vacation, delegates, auto-forward, sendAs, batch delete) ──
   async getGmailVacation() {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/settings/vacation");
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/settings/vacation`);
   }
   async setGmailVacation(enabled, options) {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/settings/vacation", {
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/settings/vacation`, {
       method: "PUT",
       body: { enableAutoReply: enabled, responseSubject: options?.responseSubject, responseBodyHtml: options?.responseBody, startTime: options?.startTime, endTime: options?.endTime }
     });
   }
   async listGmailDelegates() {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/settings/delegates");
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/settings/delegates`);
   }
   async addGmailDelegate(email) {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/settings/delegates", { method: "POST", body: { delegateEmail: email } });
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/settings/delegates`, { method: "POST", body: { delegateEmail: email } });
   }
   async removeGmailDelegate(email) {
     const t = await this.token();
-    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/settings/delegates/${email}`, { method: "DELETE" });
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/settings/delegates/${email}`, { method: "DELETE" });
   }
   async setGmailAutoForwarding(email, enabled) {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/settings/autoForwarding", {
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/settings/autoForwarding`, {
       method: "PUT",
       body: { enabled, emailAddress: email, disposition: "leaveInInbox" }
     });
   }
   async listGmailSendAs() {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs");
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/settings/sendAs`);
   }
   async batchDeleteGmailMessages(ids) {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchDelete", { method: "POST", body: { ids } });
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages/batchDelete`, { method: "POST", body: { ids } });
   }
   async trashGmailMessage(messageId) {
     const t = await this.token();
-    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/trash`, { method: "POST" });
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages/${messageId}/trash`, { method: "POST" });
   }
   async untrashGmailMessage(messageId) {
     const t = await this.token();
-    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/untrash`, { method: "POST" });
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages/${messageId}/untrash`, { method: "POST" });
   }
   async deleteGmailMessage(messageId) {
     const t = await this.token();
-    const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}`, {
+    const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/messages/${messageId}`, {
       method: "DELETE",
       headers: { "Authorization": `Bearer ${t}` }
     });
@@ -4820,11 +4867,11 @@ Return ONLY a JSON array: [{"fileName": "...", "category": "...", "confidence": 
   }
   async listGmailDrafts(maxResults = 20) {
     const t = await this.token();
-    return googleFetch(t, "https://gmail.googleapis.com/gmail/v1/users/me/drafts", { params: { maxResults: String(maxResults) } });
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/drafts`, { params: { maxResults: String(maxResults) } });
   }
   async deleteGmailDraft(draftId) {
     const t = await this.token();
-    const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/drafts/${draftId}`, {
+    const resp = await fetch(`https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/drafts/${draftId}`, {
       method: "DELETE",
       headers: { "Authorization": `Bearer ${t}` }
     });
@@ -4833,11 +4880,11 @@ Return ONLY a JSON array: [{"fileName": "...", "category": "...", "confidence": 
   }
   async trashGmailThread(threadId) {
     const t = await this.token();
-    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}/trash`, { method: "POST" });
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/threads/${threadId}/trash`, { method: "POST" });
   }
   async untrashGmailThread(threadId) {
     const t = await this.token();
-    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}/untrash`, { method: "POST" });
+    return googleFetch(t, `https://gmail.googleapis.com/gmail/v1/users/${this._gmailUserId}/threads/${threadId}/untrash`, { method: "POST" });
   }
   // ── Chat Gaps (create space, memberships, reactions) ──
   async createChatSpace(displayName, spaceType = "SPACE") {
@@ -5142,12 +5189,13 @@ var TOOLS = [
   // ── Gmail ──
   {
     name: "gmail_search",
-    description: "Search Gmail messages",
+    description: "Search Gmail messages. Pass gmail_account to search a delegated inbox (e.g. shortsaledfw@gmail.com).",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Gmail search query (e.g. from:foo@bar.com)" },
-        maxResults: { type: "number", description: "Max messages to return (default 20)" }
+        maxResults: { type: "number", description: "Max messages to return (default 20)" },
+        gmail_account: { type: "string", description: "Delegated account email to search (e.g. shortsaledfw@gmail.com). Omit to search authorityandbrand@gmail.com." }
       },
       required: ["query"]
     }
@@ -6628,6 +6676,41 @@ var TOOLS = [
     name: "gws_status",
     description: "Check Google Workspace auth status and available scopes",
     inputSchema: { type: "object", properties: {} }
+  },
+  // ── Apps Script webhook (gas_webhook grouped tool sub-actions) ──
+  {
+    name: "gas_webhook_call",
+    description: "Call a single Google Apps Script CLI command via the GAS webhook",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cmd: { type: "string", description: "CLI command name (e.g. listFolder, zkStats, memoryLogs)" },
+        args: { type: "object", description: "Command arguments (optional)" }
+      },
+      required: ["cmd"]
+    }
+  },
+  {
+    name: "gas_webhook_batch",
+    description: "Call multiple Google Apps Script CLI commands in one round-trip via the GAS webhook",
+    inputSchema: {
+      type: "object",
+      properties: {
+        calls: {
+          type: "array",
+          description: "Array of {cmd, args} objects",
+          items: {
+            type: "object",
+            properties: {
+              cmd: { type: "string" },
+              args: { type: "object" }
+            },
+            required: ["cmd"]
+          }
+        }
+      },
+      required: ["calls"]
+    }
   }
 ];
 var GROUPED_TOOLS = [
@@ -7138,9 +7221,742 @@ Actions: create, get, update, end, conferences, participants, recordings, transc
       },
       required: ["action"]
     }
+  },
+  // ── Apps Script GAS Webhook ──
+  {
+    name: "gas_webhook",
+    description: `Google Apps Script webhook — run any GAS CLI command without OAuth.
+
+Actions: call, batch
+
+- call: cmd (required), args (optional object) — run a single GAS command
+- batch: calls (required array of {cmd, args}) — run multiple commands in one round-trip
+
+Examples:
+- call: { cmd: "listFolder", args: { folderKey: "CASE_ROOT" } }
+- call: { cmd: "zkStats" }
+- call: { cmd: "memoryLogs" }
+- batch: { calls: [{ cmd: "zkStats" }, { cmd: "memoryLogs" }] }`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["call", "batch"] },
+        cmd: { type: "string", description: "GAS CLI command name (for action=call)" },
+        args: { type: "object", description: "Command arguments (for action=call)" },
+        calls: {
+          type: "array",
+          description: "Array of {cmd, args} (for action=batch)",
+          items: { type: "object", properties: { cmd: { type: "string" }, args: { type: "object" } }, required: ["cmd"] }
+        }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A5: Gemini shortcut wrappers ─────────────────────────────────────────
+  {
+    name: "gemini_analyze_image",
+    description: "Analyze an image or Drive file with Gemini multimodal. Provide one of: image_url, image_data (base64), drive_file_id, or file_uri (Gemini File API).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "Instruction prompt for the image analysis" },
+        image_url: { type: "string", description: "Public URL of the image to fetch and analyze" },
+        image_data: { type: "string", description: "Base64-encoded image data" },
+        drive_file_id: { type: "string", description: "Google Drive file ID — injected as native Drive reference" },
+        file_uri: { type: "string", description: "Gemini File API URI (e.g. from gemini_file_upload)" },
+        mime_type: { type: "string", description: "MIME type for drive_file_id or file_uri (default: application/pdf)" },
+        model: { type: "string", description: "Gemini model (default: gemini-2.5-flash)" },
+        systemInstruction: { type: "string" },
+        temperature: { type: "number" },
+        responseMimeType: { type: "string" },
+        responseSchema: { type: "object" }
+      }
+    }
+  },
+  {
+    name: "gemini_generate_json",
+    description: "Generate structured JSON output from Gemini. Automatically sets responseMimeType to application/json.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string" },
+        schema: { type: "object", description: "Optional JSON schema for the response" },
+        model: { type: "string", description: "Gemini model (default: gemini-2.5-flash)" },
+        systemInstruction: { type: "string" },
+        temperature: { type: "number" }
+      },
+      required: ["prompt"]
+    }
+  },
+  {
+    name: "gemini_think",
+    description: "Gemini thinking/reasoning mode. Uses extended thinking budget for complex multi-step problems.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string" },
+        thinkingBudget: { type: "number", description: "Token budget for thinking (default: 8192, range: 1024-24576)" },
+        model: { type: "string", description: "Gemini model (default: gemini-2.5-flash-thinking)" },
+        systemInstruction: { type: "string" }
+      },
+      required: ["prompt"]
+    }
+  },
+  {
+    name: "gemini_run_code",
+    description: "Execute Python code with Gemini code execution tool. Provide either code (Python snippet) or prompt.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        code: { type: "string", description: "Python code to execute" },
+        prompt: { type: "string", description: "Natural language prompt (used if code not provided)" },
+        model: { type: "string", description: "Gemini model (default: gemini-2.5-flash)" }
+      }
+    }
+  },
+  {
+    name: "gemini_chat",
+    description: "Multi-turn chat with Gemini using KV-persisted session history. Sessions expire after 24 hours.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        message: { type: "string", description: "User message" },
+        sessionId: { type: "string", description: "Session ID for multi-turn history (default: 'default')" },
+        model: { type: "string", description: "Gemini model (default: gemini-2.5-flash)" },
+        systemInstruction: { type: "string" },
+        temperature: { type: "number" }
+      },
+      required: ["message"]
+    }
+  },
+  {
+    name: "gemini_clear_chat",
+    description: "Clear a Gemini chat session's KV-stored history.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Session ID to clear (default: 'default')" }
+      }
+    }
+  },
+
+  // ── A7: YouTube Data v3 ──────────────────────────────────────────────────
+  {
+    name: "youtube",
+    description: `YouTube Data v3 API. Manage channels, videos, playlists, comments, and analytics.
+
+Actions: list_channels, search, get_video, list_videos, get_comments, post_comment, reply_comment, list_playlists, create_playlist, add_to_playlist, get_subscriptions, update_video, analytics, get_channel, list_live_streams, get_captions
+
+- list_channels: (no params) — list authenticated user's channels
+- search: query (required), maxResults
+- get_video: videoId (required)
+- list_videos: playlistId, channelId, maxResults — list videos in a playlist or channel
+- get_comments: videoId (required), maxResults
+- post_comment: videoId + text (required)
+- reply_comment: parentId + text (required)
+- list_playlists: (no params) — authenticated user's playlists
+- create_playlist: title (required), description
+- add_to_playlist: playlistId + videoId (required)
+- get_subscriptions: (no params)
+- update_video: videoId + metadata (required — object with title/description/tags/categoryId)
+- analytics: startDate + endDate (required), metrics (array)
+- get_channel: channelId (required)
+- list_live_streams: (no params)
+- get_captions: videoId (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_channels", "search", "get_video", "list_videos", "get_comments", "post_comment", "reply_comment", "list_playlists", "create_playlist", "add_to_playlist", "get_subscriptions", "update_video", "analytics", "get_channel", "list_live_streams", "get_captions"] },
+        query: { type: "string" }, videoId: { type: "string" }, channelId: { type: "string" },
+        playlistId: { type: "string" }, parentId: { type: "string" }, text: { type: "string" },
+        title: { type: "string" }, description: { type: "string" }, metadata: { type: "object" },
+        startDate: { type: "string" }, endDate: { type: "string" }, metrics: { type: "array" },
+        maxResults: { type: "number" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Google Classroom ─────────────────────────────────────────────────
+  {
+    name: "classroom",
+    description: `Google Classroom course and assignment management.
+
+Actions: list_courses, get_course, create_course, list_students, list_teachers, list_coursework, create_coursework, list_submissions, grade_submission, list_announcements, create_announcement, list_topics, create_topic
+
+- list_courses: maxResults
+- get_course: courseId (required)
+- create_course: name (required), description, section
+- list_students/list_teachers: courseId (required)
+- list_coursework: courseId (required), maxResults
+- create_coursework: courseId + title (required), description, workType (ASSIGNMENT/SHORT_ANSWER_QUESTION/MULTIPLE_CHOICE_QUESTION), dueDate
+- list_submissions: courseId + courseworkId (required)
+- grade_submission: courseId + courseworkId + studentId + grade (required)
+- list_announcements: courseId (required), maxResults
+- create_announcement: courseId + text (required), materials (array)
+- list_topics: courseId (required)
+- create_topic: courseId + name (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_courses", "get_course", "create_course", "list_students", "list_teachers", "list_coursework", "create_coursework", "list_submissions", "grade_submission", "list_announcements", "create_announcement", "list_topics", "create_topic"] },
+        courseId: { type: "string" }, courseworkId: { type: "string" }, studentId: { type: "string" },
+        name: { type: "string" }, title: { type: "string" }, description: { type: "string" },
+        section: { type: "string" }, workType: { type: "string" }, dueDate: { type: "string" },
+        grade: { type: "number" }, text: { type: "string" }, materials: { type: "array" },
+        maxResults: { type: "number" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Google Keep ──────────────────────────────────────────────────────
+  {
+    name: "keep",
+    description: `Google Keep notes.
+
+Actions: list_notes, get_note, create_note, delete_note
+
+- list_notes: pageSize, filter
+- get_note: noteId (required)
+- create_note: title (required), text (body text)
+- delete_note: noteId (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_notes", "get_note", "create_note", "delete_note"] },
+        noteId: { type: "string" }, title: { type: "string" }, text: { type: "string" },
+        pageSize: { type: "number" }, filter: { type: "string" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Google Photos ────────────────────────────────────────────────────
+  {
+    name: "photos",
+    description: `Google Photos albums and media items.
+
+Actions: list_albums, get_album, create_album, search, get_media_item, list_media_items, share_album
+
+- list_albums: maxResults
+- get_album: albumId (required)
+- create_album: title (required)
+- search: filters (object — see Photos API filter docs)
+- get_media_item: mediaItemId (required)
+- list_media_items: maxResults
+- share_album: albumId (required), isCollaborative, isCommentable`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_albums", "get_album", "create_album", "search", "get_media_item", "list_media_items", "share_album"] },
+        albumId: { type: "string" }, mediaItemId: { type: "string" }, title: { type: "string" },
+        filters: { type: "object" }, maxResults: { type: "number" },
+        isCollaborative: { type: "boolean" }, isCommentable: { type: "boolean" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Google Analytics / GA4 ───────────────────────────────────────────
+  {
+    name: "analytics",
+    description: `Google Analytics 4 (GA4) reporting.
+
+Actions: list_accounts, list_properties, run_report, realtime_report
+
+- list_accounts: (no params)
+- list_properties: accountId (required)
+- run_report: propertyId (required), metrics (array of {name}), dimensions (array of {name}), dateRanges (array of {startDate,endDate})
+- realtime_report: propertyId (required), metrics (array of {name})`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_accounts", "list_properties", "run_report", "realtime_report"] },
+        accountId: { type: "string" }, propertyId: { type: "string" },
+        metrics: { type: "array" }, dimensions: { type: "array" }, dateRanges: { type: "array" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Admin Directory ──────────────────────────────────────────────────
+  {
+    name: "admin",
+    description: `Google Workspace Admin Directory. Manage users, groups, org units, domains, roles, and audit logs. Requires admin OAuth scopes.
+
+Actions: list_users, get_user, create_user, suspend_user, list_groups, get_group, create_group, list_group_members, add_group_member, remove_group_member, list_org_units, list_domains, list_roles, audit_activities, usage_report
+
+- list_users: maxResults
+- get_user: userKey (required — email or user ID)
+- create_user: email + firstName + lastName + password (required)
+- suspend_user: userKey (required)
+- list_groups: maxResults
+- get_group: groupKey (required)
+- create_group: email + name (required), description
+- list_group_members: groupKey (required), maxResults
+- add_group_member: groupKey + memberKey (required)
+- remove_group_member: groupKey + memberKey (required)
+- list_org_units/list_domains/list_roles: (no params)
+- audit_activities: applicationName (default: login), userKey, eventName, maxResults
+- usage_report: date (required, e.g. '2024-01-15'), parameters`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_users", "get_user", "create_user", "suspend_user", "list_groups", "get_group", "create_group", "list_group_members", "add_group_member", "remove_group_member", "list_org_units", "list_domains", "list_roles", "audit_activities", "usage_report"] },
+        userKey: { type: "string" }, groupKey: { type: "string" }, memberKey: { type: "string" },
+        email: { type: "string" }, firstName: { type: "string" }, lastName: { type: "string" },
+        password: { type: "string" }, name: { type: "string" }, description: { type: "string" },
+        applicationName: { type: "string" }, eventName: { type: "string" },
+        date: { type: "string" }, parameters: { type: "string" }, maxResults: { type: "number" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Gemini Models/Tuning API ─────────────────────────────────────────
+  {
+    name: "gemini_tuning",
+    description: `Gemini Models and Fine-tuning API. List models, generate content, count tokens, embed, manage tuned models.
+
+Actions: list_models, generate_content, count_tokens, embed_content, list_tuned_models, create_tuning_job
+
+- list_models: (no params) — list available base models
+- generate_content: prompt (required), model
+- count_tokens: prompt (required), model
+- embed_content: text (required), model (default: embedding-001)
+- list_tuned_models: (no params)
+- create_tuning_job: displayName + baseModel + trainingData (required), hyperparameters`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_models", "generate_content", "count_tokens", "embed_content", "list_tuned_models", "create_tuning_job"] },
+        prompt: { type: "string" }, model: { type: "string" }, text: { type: "string" },
+        displayName: { type: "string" }, baseModel: { type: "string" },
+        trainingData: { type: "array" }, hyperparameters: { type: "object" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: NotebookLM Corpus / Discovery Engine ─────────────────────────────
+  {
+    name: "nlm_corpus",
+    description: `NotebookLM Discovery Engine corpus API. Create and query semantic corpora.
+
+Actions: list_corpora, create_corpus, get_corpus, delete_corpus, list_documents, create_document, add_chunk, query_corpus, generate_answer
+
+- list_corpora: (no params)
+- create_corpus: displayName (required)
+- get_corpus: corpusName (required)
+- delete_corpus: corpusName (required), force
+- list_documents: corpusName (required)
+- create_document: corpusName + displayName (required)
+- add_chunk: documentName + text (required)
+- query_corpus: corpusName + query (required)
+- generate_answer: corpusName + prompt (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_corpora", "create_corpus", "get_corpus", "delete_corpus", "list_documents", "create_document", "add_chunk", "query_corpus", "generate_answer"] },
+        corpusName: { type: "string" }, documentName: { type: "string" },
+        displayName: { type: "string" }, query: { type: "string" },
+        prompt: { type: "string" }, text: { type: "string" }, force: { type: "boolean" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Blogger ──────────────────────────────────────────────────────────
+  {
+    name: "blogger",
+    description: `Google Blogger API. Manage blogs, posts, and comments.
+
+Actions: list_blogs, list_posts, get_post, create_post, update_post, delete_post, list_comments
+
+- list_blogs: (no params)
+- list_posts: blogId (required), maxResults
+- get_post: blogId + postId (required)
+- create_post: blogId + title + content (required)
+- update_post: blogId + postId + title + content (required)
+- delete_post: blogId + postId (required)
+- list_comments: blogId + postId (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_blogs", "list_posts", "get_post", "create_post", "update_post", "delete_post", "list_comments"] },
+        blogId: { type: "string" }, postId: { type: "string" },
+        title: { type: "string" }, content: { type: "string" }, maxResults: { type: "number" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Search Console ───────────────────────────────────────────────────
+  {
+    name: "search_console",
+    description: `Google Search Console. Site performance, URL inspection, and sitemaps.
+
+Actions: list_sites, performance, inspect_url, list_sitemaps, submit_sitemap
+
+- list_sites: (no params)
+- performance: siteUrl + startDate + endDate (required), dimensions (array)
+- inspect_url: siteUrl + inspectUrl (required)
+- list_sitemaps: siteUrl (required)
+- submit_sitemap: siteUrl + sitemapUrl (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_sites", "performance", "inspect_url", "list_sitemaps", "submit_sitemap"] },
+        siteUrl: { type: "string" }, inspectUrl: { type: "string" }, sitemapUrl: { type: "string" },
+        startDate: { type: "string" }, endDate: { type: "string" }, dimensions: { type: "array" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Cloud Translation ────────────────────────────────────────────────
+  {
+    name: "translate",
+    description: `Google Cloud Translation. Translate text, detect language, list supported languages.
+
+Actions: translate_text, detect_language, list_supported_languages
+
+- translate_text: text + targetLanguage (required), sourceLanguage
+- detect_language: text (required)
+- list_supported_languages: displayLanguage`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["translate_text", "detect_language", "list_supported_languages"] },
+        text: { type: "string" }, targetLanguage: { type: "string" },
+        sourceLanguage: { type: "string" }, displayLanguage: { type: "string" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: BigQuery REST ────────────────────────────────────────────────────
+  {
+    name: "bigquery",
+    description: `BigQuery REST API. List datasets, tables, and run queries.
+
+Actions: list_datasets, list_tables, query
+
+- list_datasets: projectId (required)
+- list_tables: projectId + datasetId (required)
+- query: projectId + sql (required), useLegacySql (default: false)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_datasets", "list_tables", "query"] },
+        projectId: { type: "string" }, datasetId: { type: "string" },
+        sql: { type: "string" }, useLegacySql: { type: "boolean" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Pub/Sub ──────────────────────────────────────────────────────────
+  {
+    name: "pubsub",
+    description: `Google Cloud Pub/Sub. Topics, subscriptions, publish, and pull.
+
+Actions: list_topics, create_topic, publish, list_subscriptions, pull
+
+- list_topics: projectId (required)
+- create_topic: projectId + topicName (required)
+- publish: topicName + data (required), attributes (object)
+- list_subscriptions: projectId (required)
+- pull: subscriptionName + maxMessages (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_topics", "create_topic", "publish", "list_subscriptions", "pull"] },
+        projectId: { type: "string" }, topicName: { type: "string" },
+        subscriptionName: { type: "string" }, data: { type: "string" },
+        attributes: { type: "object" }, maxMessages: { type: "number" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Firebase Management ──────────────────────────────────────────────
+  {
+    name: "firebase",
+    description: `Firebase Management API. List and get Firebase projects.
+
+Actions: list_projects, get_project
+
+- list_projects: (no params)
+- get_project: projectId (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_projects", "get_project"] },
+        projectId: { type: "string" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Cloud Storage ────────────────────────────────────────────────────
+  {
+    name: "cloud_storage",
+    description: `Google Cloud Storage. List buckets/objects, upload, and delete.
+
+Actions: list_buckets, list_objects, upload, delete
+
+- list_buckets: projectId (required)
+- list_objects: bucketName (required), prefix, maxResults
+- upload: bucketName + objectName + content (required), contentType (default: text/plain)
+- delete: bucketName + objectName (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_buckets", "list_objects", "upload", "delete"] },
+        projectId: { type: "string" }, bucketName: { type: "string" }, objectName: { type: "string" },
+        prefix: { type: "string" }, content: { type: "string" },
+        contentType: { type: "string" }, maxResults: { type: "number" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Tag Manager ──────────────────────────────────────────────────────
+  {
+    name: "tag_manager",
+    description: `Google Tag Manager. List accounts, containers, and tags.
+
+Actions: list_accounts, list_containers, list_tags
+
+- list_accounts: (no params)
+- list_containers: accountId (required)
+- list_tags: accountId + containerId (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["list_accounts", "list_containers", "list_tags"] },
+        accountId: { type: "string" }, containerId: { type: "string" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Speech-to-Text ───────────────────────────────────────────────────
+  {
+    name: "speech",
+    description: `Google Cloud Speech-to-Text. Transcribe audio synchronously or asynchronously.
+
+Actions: recognize, long_running_recognize
+
+- recognize: audioUri (required), languageCode (default: en-US) — synchronous (<1 min audio)
+- long_running_recognize: audioUri (required), languageCode — async, returns operation name`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["recognize", "long_running_recognize"] },
+        audioUri: { type: "string", description: "GCS URI of audio file (gs://bucket/file)" },
+        languageCode: { type: "string", description: "BCP-47 language code (e.g. 'en-US')" }
+      },
+      required: ["action", "audioUri"]
+    }
+  },
+
+  // ── A7: Text-to-Speech ───────────────────────────────────────────────────
+  {
+    name: "tts",
+    description: `Google Cloud Text-to-Speech. Convert text or SSML to audio.
+
+Actions: text_to_speech, text_to_speech_ssml, list_voices
+
+- text_to_speech: text (required), languageCode, voiceName, ssmlGender, audioEncoding, speakingRate, pitch
+- text_to_speech_ssml: ssml (required), languageCode, voiceName, audioEncoding
+- list_voices: languageCode (optional — filter voices by language)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["text_to_speech", "text_to_speech_ssml", "list_voices"] },
+        text: { type: "string" }, ssml: { type: "string" }, languageCode: { type: "string" },
+        voiceName: { type: "string" }, ssmlGender: { type: "string" },
+        audioEncoding: { type: "string" }, speakingRate: { type: "number" }, pitch: { type: "number" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Cloud Natural Language ───────────────────────────────────────────
+  {
+    name: "nlp",
+    description: `Google Cloud Natural Language API. Entity extraction, sentiment analysis, classification, and full annotation.
+
+Actions: analyze_entities, analyze_sentiment, classify_text, annotate_text
+
+- analyze_entities: text (required)
+- analyze_sentiment: text (required)
+- classify_text: text (required)
+- annotate_text: text (required), extractEntities, extractSentiment (both default true), extractSyntax, classifyText (both default false)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["analyze_entities", "analyze_sentiment", "classify_text", "annotate_text"] },
+        text: { type: "string" },
+        extractEntities: { type: "boolean" }, extractSentiment: { type: "boolean" },
+        extractSyntax: { type: "boolean" }, classifyText: { type: "boolean" }
+      },
+      required: ["action", "text"]
+    }
+  },
+
+  // ── A7: Workspace Events API ─────────────────────────────────────────────
+  {
+    name: "workspace_events",
+    description: `Google Workspace Events API. Subscribe to real-time event notifications via Pub/Sub.
+
+Actions: create_subscription, list_subscriptions, delete_subscription
+
+- create_subscription: targetResource + eventTypes + pubsubTopic (required), payloadOptions
+- list_subscriptions: filter (optional)
+- delete_subscription: subscriptionName (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["create_subscription", "list_subscriptions", "delete_subscription"] },
+        targetResource: { type: "string", description: "Resource to monitor (e.g. '//chat.googleapis.com/spaces/SPACE_ID')" },
+        eventTypes: { type: "array", items: { type: "string" }, description: "Event type URIs" },
+        pubsubTopic: { type: "string", description: "Pub/Sub topic to receive events" },
+        payloadOptions: { type: "object" }, filter: { type: "string" },
+        subscriptionName: { type: "string" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Google Maps ──────────────────────────────────────────────────────
+  {
+    name: "maps",
+    description: `Google Maps Platform APIs. Geocoding, places search, directions, and distance matrix. Requires GOOGLE_CLOUD_API_KEY (not OAuth).
+
+Actions: geocode, reverse_geocode, search_places, place_details, directions, distance_matrix
+
+- geocode: address (required)
+- reverse_geocode: lat + lng (required)
+- search_places: query (required), location, radius, type
+- place_details: placeId (required), fields (array)
+- directions: origin + destination (required), mode (driving/walking/bicycling/transit), alternatives, waypoints
+- distance_matrix: origins + destinations (required — arrays of addresses), mode`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["geocode", "reverse_geocode", "search_places", "place_details", "directions", "distance_matrix"] },
+        address: { type: "string" }, lat: { type: "number" }, lng: { type: "number" },
+        query: { type: "string" }, placeId: { type: "string" },
+        location: { type: "string" }, radius: { type: "number" }, type: { type: "string" },
+        fields: { type: "array" }, origin: { type: "string" }, destination: { type: "string" },
+        mode: { type: "string" }, alternatives: { type: "boolean" }, waypoints: { type: "array" },
+        origins: { type: "array" }, destinations: { type: "array" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Drive Activity API ───────────────────────────────────────────────
+  {
+    name: "drive_activity",
+    description: `Google Drive Activity API. Query Drive item history and audit trail.
+
+Actions: query
+
+- query: itemName (Drive item resource, e.g. 'items/FILE_ID') OR ancestorName (folder), filter (optional)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["query"] },
+        itemName: { type: "string", description: "Drive item resource name (e.g. 'items/FILE_ID')" },
+        ancestorName: { type: "string", description: "Folder resource name to query all descendants" },
+        filter: { type: "string", description: "Filter string (e.g. 'time > \"2024-01-01T00:00:00Z\"')" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Gemini File API ──────────────────────────────────────────────────
+  {
+    name: "gemini_file",
+    description: `Gemini File API. Upload, list, get, and delete files for use in Gemini multimodal prompts.
+
+Actions: upload, list, get, delete
+
+- upload: displayName + mimeType + data (base64-encoded, required)
+- list: (no params)
+- get: fileName (required — resource name like 'files/abc123')
+- delete: fileName (required)`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["upload", "list", "get", "delete"] },
+        displayName: { type: "string" }, mimeType: { type: "string" },
+        data: { type: "string", description: "Base64-encoded file content" },
+        fileName: { type: "string", description: "File resource name (e.g. 'files/abc123')" }
+      },
+      required: ["action"]
+    }
+  },
+
+  // ── A7: Long-running operations ──────────────────────────────────────────
+  {
+    name: "operation",
+    description: `Get the status of a long-running Google API operation. Works for both Gemini/generativelanguage operations and other Cloud operations.
+
+Actions: get_status
+
+- get_status: operationName (required — full resource name, e.g. 'operations/abc' or 'tunedModels/x/operations/y')`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["get_status"] },
+        operationName: { type: "string", description: "Full operation resource name" }
+      },
+      required: ["action", "operationName"]
+    }
   }
 ];
+
+// ── Google Apps Script webhook ──────────────────────────────────────────────
+const GAS_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweEDRiSjOVYMttT474lWXAgf5R_cM7rsmdx5Fr_b7y/exec';
+async function gasPost(env2, body) {
+  const resp = await fetch(GAS_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': env2.GAS_WEBHOOK_SECRET ?? '' },
+    body: JSON.stringify(body),
+    redirect: 'follow',
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`GAS webhook ${resp.status}: ${text.slice(0, 200)}`);
+  }
+  return resp.json();
+}
+__name(gasPost, "gasPost");
+
 async function callTool(name, args, gws, env2) {
+  // Apply delegated Gmail account if provided.
+  // Pass gmail_account: "shortsaledfw@gmail.com" on any gmail_* tool call.
+  if (args.gmail_account && name && name.startsWith("gmail_")) {
+    gws.setGmailAccount(args.gmail_account);
+    // For shortsaledfw, fetch its dedicated OAuth token (different account = different token).
+    const isShortsale = args.gmail_account === "shortsaledfw@gmail.com" || args.gmail_account === "shortsale";
+    if (isShortsale) {
+      try {
+        const shortsaleToken = await gws.oauth.getShortsaleToken(env2);
+        gws.setGmailTokenOverride(shortsaleToken);
+      } catch (e) {
+        console.error("[callTool] Failed to get shortsale token:", e.message);
+        // Continue without override — will fail at Gmail API level with auth error
+      }
+    }
+  }
   // Normalize sheets range parameters: range_a1 (string) and range_grid (object)
   // map to legacy `args.range` based on the action. Preserves backward compatibility
   // for callers that still pass `range` directly.
@@ -7405,6 +8221,8 @@ async function callTool(name, args, gws, env2) {
       return gws.getDriveSupportedFormats();
     case "drive_download":
       return gws.getDriveFileDownloadUrl(args.fileId);
+    case "drive_get_bytes":
+      return gws.getDriveFileBytes(args.fileId);
     case "drive_revisions":
       return gws.getDriveRevisions(args.fileId, args.pageSize);
     // Calendar Extended
@@ -7659,6 +8477,412 @@ async function callTool(name, args, gws, env2) {
       return gws.listMeetTranscripts(args.conferenceRecord);
     case "meet_transcript_entries":
       return gws.getMeetTranscriptEntries(args.transcript);
+    // Google Apps Script webhook
+    case "gas_webhook_call":
+      return gasPost(env2, { cmd: args.cmd, args: args.args ?? {} });
+    case "gas_webhook_batch":
+      return gasPost(env2, { batch: args.calls });
+
+    // ── A5: Gemini shortcut wrappers ──────────────────────────────────────────
+    case "gemini_analyze_image": {
+      const model = args.model ?? "gemini-2.5-flash";
+      const parts = [];
+      if (args.prompt) parts.push({ text: args.prompt });
+      if (args.drive_file_id) {
+        parts.push({ fileData: { mimeType: args.mime_type ?? "application/pdf", fileUri: `https://drive.google.com/file/d/${args.drive_file_id}/view` } });
+      } else if (args.image_url) {
+        const resp = await fetch(args.image_url);
+        const buf = await resp.arrayBuffer();
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        const mimeType = resp.headers.get("content-type") ?? "image/jpeg";
+        parts.push({ inlineData: { mimeType, data: b64 } });
+      } else if (args.image_data) {
+        parts.push({ inlineData: { mimeType: args.mime_type ?? "image/jpeg", data: args.image_data } });
+      } else if (args.file_uri) {
+        parts.push({ fileData: { mimeType: args.mime_type ?? "application/pdf", fileUri: args.file_uri } });
+      }
+      return gws.geminiGenerateContent(model, [{ role: "user", parts }], {
+        systemInstruction: args.systemInstruction,
+        temperature: args.temperature ?? 0.1,
+        responseMimeType: args.responseMimeType,
+        responseSchema: args.responseSchema,
+      });
+    }
+    case "gemini_generate_json": {
+      const model = args.model ?? "gemini-2.5-flash";
+      const contents = [{ role: "user", parts: [{ text: args.prompt }] }];
+      return gws.geminiGenerateContent(model, contents, {
+        systemInstruction: args.systemInstruction,
+        temperature: args.temperature ?? 0.1,
+        responseMimeType: "application/json",
+        responseSchema: args.schema ?? args.responseSchema,
+      });
+    }
+    case "gemini_think": {
+      const model = args.model ?? "gemini-2.5-flash-thinking-exp-01-21";
+      const contents = [{ role: "user", parts: [{ text: args.prompt }] }];
+      return gws.geminiGenerateContent(model, contents, {
+        systemInstruction: args.systemInstruction,
+        thinkingBudget: args.thinkingBudget ?? 8192,
+        temperature: 1,
+      });
+    }
+    case "gemini_run_code": {
+      const model = args.model ?? "gemini-2.5-flash";
+      const prompt = args.code
+        ? `Execute this code and return the result:\n\`\`\`python\n${args.code}\n\`\`\``
+        : args.prompt;
+      const contents = [{ role: "user", parts: [{ text: prompt }] }];
+      return gws.geminiGenerateContent(model, contents, { codeExecution: true });
+    }
+    case "gemini_chat": {
+      const sessionId = args.sessionId ?? args.session_id ?? "default";
+      const kvKey = `gemini_chat:${sessionId}`;
+      let history = [];
+      if (env2.CACHE) {
+        try { history = JSON.parse(await env2.CACHE.get(kvKey) ?? "[]"); } catch { /* empty */ }
+      }
+      history.push({ role: "user", parts: [{ text: args.message }] });
+      const model = args.model ?? "gemini-2.5-flash";
+      const result = await gws.geminiGenerateContent(model, history, {
+        systemInstruction: args.systemInstruction,
+        temperature: args.temperature,
+      });
+      const replyText = result.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ?? "";
+      history.push({ role: "model", parts: [{ text: replyText }] });
+      if (history.length > 40) history = history.slice(-40);
+      if (env2.CACHE) await env2.CACHE.put(kvKey, JSON.stringify(history), { expirationTtl: 86400 });
+      return { reply: replyText, session_id: sessionId, turns: Math.floor(history.length / 2), model };
+    }
+    case "gemini_clear_chat": {
+      const sessionId = args.sessionId ?? args.session_id ?? "default";
+      if (env2.CACHE) await env2.CACHE.delete(`gemini_chat:${sessionId}`);
+      return { cleared: true, session_id: sessionId };
+    }
+
+    // ── A7: YouTube ───────────────────────────────────────────────────────────
+    case "youtube_list_channels":
+      return gws.listYouTubeChannels();
+    case "youtube_search":
+      return gws.searchYouTube(args.query, { maxResults: args.maxResults ?? args.max_results ?? 10 });
+    case "youtube_get_video":
+      return gws.getYouTubeVideo(args.videoId ?? args.video_id);
+    case "youtube_list_videos":
+      return gws.listYouTubeVideos(args.channelId ?? args.channel_id, args.playlistId ?? args.playlist_id, args.maxResults ?? args.max_results ?? 10);
+    case "youtube_get_comments":
+      return gws.getYouTubeVideoComments(args.videoId ?? args.video_id, args.maxResults ?? args.max_results ?? 20);
+    case "youtube_post_comment":
+      return gws.postYouTubeComment(args.videoId ?? args.video_id, args.text);
+    case "youtube_reply_comment":
+      return gws.replyYouTubeComment(args.parentId ?? args.parent_id, args.text);
+    case "youtube_list_playlists":
+      return gws.listYouTubePlaylists();
+    case "youtube_create_playlist":
+      return gws.createYouTubePlaylist(args.title, args.description);
+    case "youtube_add_to_playlist":
+      return gws.addVideoToPlaylist(args.playlistId ?? args.playlist_id, args.videoId ?? args.video_id);
+    case "youtube_get_subscriptions":
+      return gws.getYouTubeSubscriptions();
+    case "youtube_update_video":
+      return gws.updateYouTubeVideo(args.videoId ?? args.video_id, args.metadata ?? args);
+    case "youtube_analytics":
+      return gws.getYouTubeAnalytics({ startDate: args.startDate ?? args.start_date ?? "", endDate: args.endDate ?? args.end_date ?? "", metrics: args.metrics });
+    case "youtube_get_channel":
+      return gws.getYouTubeChannel(args.channelId ?? args.channel_id);
+    case "youtube_list_live_streams":
+      return gws.listYouTubeLiveStreams();
+    case "youtube_get_captions":
+      return gws.getYouTubeCaptions(args.videoId ?? args.video_id);
+
+    // ── A7: Google Classroom ──────────────────────────────────────────────────
+    case "classroom_list_courses":
+      return gws.listClassroomCourses(args.maxResults ?? args.max_results ?? 30);
+    case "classroom_get_course":
+      return gws.getClassroomCourse(args.courseId ?? args.course_id);
+    case "classroom_create_course":
+      return gws.createClassroomCourse({ name: args.name, description: args.description, section: args.section });
+    case "classroom_list_students":
+      return gws.listClassroomStudents(args.courseId ?? args.course_id);
+    case "classroom_list_teachers":
+      return gws.listClassroomTeachers(args.courseId ?? args.course_id);
+    case "classroom_list_coursework":
+      return gws.listClassroomCoursework(args.courseId ?? args.course_id, args.maxResults ?? args.max_results ?? 30);
+    case "classroom_create_coursework":
+      return gws.createClassroomCoursework(args.courseId ?? args.course_id, { title: args.title, description: args.description, workType: args.workType ?? args.work_type ?? "ASSIGNMENT", dueDate: args.dueDate ?? args.due_date });
+    case "classroom_list_submissions":
+      return gws.listClassroomSubmissions(args.courseId ?? args.course_id, args.courseworkId ?? args.coursework_id);
+    case "classroom_grade_submission":
+      return gws.gradeClassroomSubmission(args.courseId ?? args.course_id, args.courseworkId ?? args.coursework_id, args.studentId ?? args.student_id, args.grade);
+    case "classroom_list_announcements":
+      return gws.listClassroomAnnouncements(args.courseId ?? args.course_id, args.maxResults ?? args.max_results ?? 30);
+    case "classroom_create_announcement":
+      return gws.createClassroomAnnouncement(args.courseId ?? args.course_id, args.text, args.materials);
+    case "classroom_list_topics":
+      return gws.listClassroomTopics(args.courseId ?? args.course_id);
+    case "classroom_create_topic":
+      return gws.createClassroomTopic(args.courseId ?? args.course_id, args.name);
+
+    // ── A7: Google Keep ───────────────────────────────────────────────────────
+    case "keep_list_notes":
+      return gws.listKeepNotes(args.pageSize ?? args.max_results ?? 25, args.filter);
+    case "keep_get_note":
+      return gws.getKeepNote(args.noteId ?? args.note_id);
+    case "keep_create_note":
+      return gws.createKeepNote(args.title, args.text ?? args.body);
+    case "keep_delete_note":
+      return gws.deleteKeepNote(args.noteId ?? args.note_id);
+
+    // ── A7: Google Photos ─────────────────────────────────────────────────────
+    case "photos_list_albums":
+      return gws.listPhotosAlbums(args.maxResults ?? args.max_results ?? 50);
+    case "photos_get_album":
+      return gws.getPhotosAlbum(args.albumId ?? args.album_id);
+    case "photos_create_album":
+      return gws.createPhotosAlbum(args.title);
+    case "photos_search":
+      return gws.searchPhotos(args.filters ?? {});
+    case "photos_get_media_item":
+      return gws.getPhotoMediaItem(args.mediaItemId ?? args.media_item_id);
+    case "photos_list_media_items":
+      return gws.listPhotosMediaItems(args.maxResults ?? args.max_results ?? 100);
+    case "photos_share_album":
+      return gws.sharePhotosAlbum(args.albumId ?? args.album_id, args.isCollaborative, args.isCommentable);
+
+    // ── A7: Google Analytics / GA4 ────────────────────────────────────────────
+    case "analytics_list_accounts":
+      return gws.listAnalyticsAccounts();
+    case "analytics_list_properties":
+      return gws.listAnalyticsProperties(args.accountId ?? args.account_id);
+    case "analytics_run_report":
+      return gws.runAnalyticsReport(args.propertyId ?? args.property_id, {
+        dateRanges: args.dateRanges ?? args.date_range ?? [{ startDate: "30daysAgo", endDate: "today" }],
+        metrics: args.metrics ?? [],
+        dimensions: args.dimensions,
+      });
+    case "analytics_realtime_report":
+      return gws.runAnalyticsRealtimeReport(args.propertyId ?? args.property_id, { metrics: args.metrics ?? [] });
+
+    // ── A7: Admin Directory ───────────────────────────────────────────────────
+    case "admin_list_users":
+      return gws.listAdminUsers({ maxResults: args.maxResults ?? args.max_results ?? 50 });
+    case "admin_get_user":
+      return gws.getAdminUser(args.userKey ?? args.user_key);
+    case "admin_create_user":
+      return gws.createAdminUser({ primaryEmail: args.email, name: { givenName: args.firstName ?? args.first_name, familyName: args.lastName ?? args.last_name }, password: args.password });
+    case "admin_suspend_user":
+      return gws.suspendAdminUser(args.userKey ?? args.user_key, true);
+    case "admin_list_groups":
+      return gws.listAdminGroups({ maxResults: args.maxResults ?? args.max_results ?? 50 });
+    case "admin_get_group":
+      return gws.getAdminGroup(args.groupKey ?? args.group_key);
+    case "admin_create_group":
+      return gws.createAdminGroup({ email: args.email, name: args.name, description: args.description });
+    case "admin_list_group_members":
+      return gws.listAdminGroupMembers(args.groupKey ?? args.group_key, args.maxResults ?? args.max_results ?? 50);
+    case "admin_add_group_member":
+      return gws.addAdminGroupMember(args.groupKey ?? args.group_key, args.memberKey ?? args.member_key);
+    case "admin_remove_group_member":
+      return gws.removeAdminGroupMember(args.groupKey ?? args.group_key, args.memberKey ?? args.member_key);
+    case "admin_list_org_units":
+      return gws.listAdminOrgUnits();
+    case "admin_list_domains":
+      return gws.listAdminDomains();
+    case "admin_list_roles":
+      return gws.listAdminRoles();
+    case "admin_audit_activities":
+      return gws.getAdminAuditActivities(args.applicationName ?? args.application_name ?? "login", { userKey: args.userKey ?? args.user_key, eventName: args.eventName ?? args.event_name, maxResults: args.maxResults ?? args.max_results ?? 50 });
+    case "admin_usage_report":
+      return gws.getAdminUsageReport(args.date, args.parameters);
+
+    // ── A7: Gemini Models/Tuning API ──────────────────────────────────────────
+    case "gemini_tuning_list_models":
+      return gws.listGeminiModels();
+    case "gemini_tuning_generate_content":
+      return gws.geminiGenerate(args.prompt, { model: args.model });
+    case "gemini_tuning_count_tokens":
+      return gws.geminiCountTokens(args.model ?? "gemini-pro", [{ parts: [{ text: args.prompt }] }]);
+    case "gemini_tuning_embed_content":
+      return gws.geminiEmbedContent(args.model ?? "embedding-001", { parts: [{ text: args.text }] });
+    case "gemini_tuning_list_tuned_models":
+      return gws.listGeminiTunedModels();
+    case "gemini_tuning_create_tuning_job":
+      return gws.createGeminiTuningJob(args.displayName ?? args.base_model, args.baseModel ?? args.base_model, args.trainingData ?? args.training_data, args.hyperparameters);
+
+    // ── A7: NotebookLM Corpus / Discovery Engine ──────────────────────────────
+    case "nlm_corpus_list_corpora":
+      return gws.listNotebookCorpora();
+    case "nlm_corpus_create_corpus":
+      return gws.createNotebookCorpus(args.displayName ?? args.display_name);
+    case "nlm_corpus_get_corpus":
+      return gws.getNotebookCorpus(args.corpusName ?? args.corpus_name);
+    case "nlm_corpus_delete_corpus":
+      return gws.deleteNotebookCorpus(args.corpusName ?? args.corpus_name, args.force);
+    case "nlm_corpus_list_documents":
+      return gws.listNotebookDocuments(args.corpusName ?? args.corpus_name);
+    case "nlm_corpus_create_document":
+      return gws.createNotebookDocument(args.corpusName ?? args.corpus_name, args.displayName ?? args.display_name);
+    case "nlm_corpus_add_chunk":
+      return gws.addNotebookChunk(args.documentName ?? args.document_name, args.text ?? args.data);
+    case "nlm_corpus_query_corpus":
+      return gws.queryNotebookCorpus(args.corpusName ?? args.corpus_name, args.query);
+    case "nlm_corpus_generate_answer":
+      return gws.generateNotebookAnswer(args.corpusName ?? args.corpus_name, args.prompt);
+
+    // ── A7: Blogger ───────────────────────────────────────────────────────────
+    case "blogger_list_blogs":
+      return gws.listBloggerBlogs();
+    case "blogger_list_posts":
+      return gws.listBloggerPosts(args.blogId ?? args.blog_id, { maxResults: args.maxResults ?? args.max_results ?? 10 });
+    case "blogger_get_post":
+      return gws.getBloggerPost(args.blogId ?? args.blog_id, args.postId ?? args.post_id);
+    case "blogger_create_post":
+      return gws.createBloggerPost(args.blogId ?? args.blog_id, { title: args.title, content: args.content });
+    case "blogger_update_post":
+      return gws.updateBloggerPost(args.blogId ?? args.blog_id, args.postId ?? args.post_id, { title: args.title, content: args.content });
+    case "blogger_delete_post":
+      return gws.deleteBloggerPost(args.blogId ?? args.blog_id, args.postId ?? args.post_id);
+    case "blogger_list_comments":
+      return gws.listBloggerComments(args.blogId ?? args.blog_id, args.postId ?? args.post_id);
+
+    // ── A7: Search Console ────────────────────────────────────────────────────
+    case "search_console_list_sites":
+      return gws.listSearchConsoleSites();
+    case "search_console_performance":
+      return gws.getSearchConsolePerformance(args.siteUrl ?? args.site_url, { startDate: args.startDate ?? args.start_date, endDate: args.endDate ?? args.end_date, dimensions: args.dimensions });
+    case "search_console_inspect_url":
+      return gws.submitSearchConsoleUrl(args.siteUrl ?? args.site_url, args.inspectUrl ?? args.inspect_url);
+    case "search_console_list_sitemaps":
+      return gws.listSearchConsoleSitemaps(args.siteUrl ?? args.site_url);
+    case "search_console_submit_sitemap":
+      return gws.submitSearchConsoleSitemap(args.siteUrl ?? args.site_url, args.sitemapUrl ?? args.sitemap_url);
+
+    // ── A7: Cloud Translation ─────────────────────────────────────────────────
+    case "translate_translate_text":
+      return gws.translateText(args.text, args.targetLanguage ?? args.target_language, args.sourceLanguage ?? args.source_language);
+    case "translate_detect_language":
+      return gws.detectLanguage(args.text);
+    case "translate_list_supported_languages":
+      return gws.listSupportedLanguages(args.displayLanguage ?? args.display_language);
+
+    // ── A7: BigQuery REST ─────────────────────────────────────────────────────
+    case "bigquery_list_datasets":
+      return gws.listBigQueryDatasets(args.projectId ?? args.project_id);
+    case "bigquery_list_tables":
+      return gws.listBigQueryTables(args.projectId ?? args.project_id, args.datasetId ?? args.dataset_id);
+    case "bigquery_query":
+      return gws.runBigQueryQuery(args.projectId ?? args.project_id, args.sql ?? args.query, { useLegacySql: args.useLegacySql ?? args.use_legacy_sql ?? false });
+
+    // ── A7: Pub/Sub ───────────────────────────────────────────────────────────
+    case "pubsub_list_topics":
+      return gws.listPubSubTopics(args.projectId ?? args.project_id);
+    case "pubsub_create_topic":
+      return gws.createPubSubTopic(args.projectId ?? args.project_id, args.topicName ?? args.topic_name);
+    case "pubsub_publish":
+      return gws.publishPubSubMessage(args.topicName ?? args.topic_name, args.data ?? args.messages, args.attributes);
+    case "pubsub_list_subscriptions":
+      return gws.listPubSubSubscriptions(args.projectId ?? args.project_id);
+    case "pubsub_pull":
+      return gws.pullPubSubMessages(args.subscriptionName ?? args.subscription_name, args.maxMessages ?? args.max_messages ?? 10);
+
+    // ── A7: Firebase Management ───────────────────────────────────────────────
+    case "firebase_list_projects":
+      return gws.listFirebaseProjects();
+    case "firebase_get_project":
+      return gws.getFirebaseProject(args.projectId ?? args.project_id);
+
+    // ── A7: Cloud Storage ─────────────────────────────────────────────────────
+    case "cloud_storage_list_buckets":
+      return gws.listCloudStorageBuckets(args.projectId ?? args.project_id);
+    case "cloud_storage_list_objects":
+      return gws.listCloudStorageObjects(args.bucketName ?? args.bucket_name, args.prefix, args.maxResults ?? args.max_results ?? 1000);
+    case "cloud_storage_upload":
+      return gws.uploadCloudStorageObject(args.bucketName ?? args.bucket_name, args.objectName ?? args.object_name, args.content, args.contentType ?? args.content_type ?? "text/plain");
+    case "cloud_storage_delete":
+      return gws.deleteCloudStorageObject(args.bucketName ?? args.bucket_name, args.objectName ?? args.object_name);
+
+    // ── A7: Tag Manager ───────────────────────────────────────────────────────
+    case "tag_manager_list_accounts":
+      return gws.listTagManagerAccounts();
+    case "tag_manager_list_containers":
+      return gws.listTagManagerContainers(args.accountId ?? args.account_id);
+    case "tag_manager_list_tags":
+      return gws.listTagManagerTags(args.accountId ?? args.account_id, args.containerId ?? args.container_id);
+
+    // ── A7: Speech-to-Text ────────────────────────────────────────────────────
+    case "speech_recognize":
+      return gws.speechRecognize(args.audioUri ?? args.audio_uri, { languageCode: args.languageCode ?? args.language_code });
+    case "speech_long_running_recognize":
+      return gws.speechLongRunningRecognize(args.audioUri ?? args.audio_uri, { languageCode: args.languageCode ?? args.language_code });
+
+    // ── A7: Text-to-Speech ────────────────────────────────────────────────────
+    case "tts_text_to_speech":
+      return gws.textToSpeech(args.text, { languageCode: args.languageCode ?? args.language_code, voiceName: args.voiceName ?? args.voice_name, ssmlGender: args.ssmlGender ?? args.ssml_gender, audioEncoding: args.audioEncoding ?? args.audio_encoding, speakingRate: args.speakingRate ?? args.speaking_rate, pitch: args.pitch });
+    case "tts_text_to_speech_ssml":
+      return gws.textToSpeechSsml(args.ssml, { languageCode: args.languageCode ?? args.language_code, voiceName: args.voiceName ?? args.voice_name, audioEncoding: args.audioEncoding ?? args.audio_encoding });
+    case "tts_list_voices":
+      return gws.listTextToSpeechVoices(args.languageCode ?? args.language_code);
+
+    // ── A7: Cloud Natural Language ────────────────────────────────────────────
+    case "nlp_analyze_entities":
+      return gws.analyzeEntities(args.text);
+    case "nlp_analyze_sentiment":
+      return gws.analyzeSentiment(args.text);
+    case "nlp_classify_text":
+      return gws.classifyText(args.text);
+    case "nlp_annotate_text":
+      return gws.annotateText(args.text, {
+        extractEntities: args.extractEntities ?? args.extract_entities ?? true,
+        extractDocumentSentiment: args.extractSentiment ?? args.extract_sentiment ?? true,
+        extractEntitySentiment: true,
+        extractSyntax: args.extractSyntax ?? args.extract_syntax ?? false,
+        classifyText: args.classifyText ?? args.classify_text ?? false,
+      });
+
+    // ── A7: Workspace Events API ──────────────────────────────────────────────
+    case "workspace_events_create_subscription":
+      return gws.createWorkspaceSubscription(args.targetResource ?? args.target_resource, args.eventTypes ?? args.event_types, args.pubsubTopic ?? args.pubsub_topic, args.payloadOptions ?? args.payload_options);
+    case "workspace_events_list_subscriptions":
+      return gws.listWorkspaceSubscriptions(args.filter);
+    case "workspace_events_delete_subscription":
+      return gws.deleteWorkspaceSubscription(args.subscriptionName ?? args.subscription_name);
+
+    // ── A7: Google Maps ───────────────────────────────────────────────────────
+    case "maps_geocode":
+      return gws.geocodeAddress(args.address);
+    case "maps_reverse_geocode":
+      return gws.reverseGeocode(args.lat, args.lng);
+    case "maps_search_places":
+      return gws.searchPlaces(args.query, { location: args.location, radius: args.radius, type: args.type });
+    case "maps_place_details":
+      return gws.getPlaceDetails(args.placeId ?? args.place_id, args.fields);
+    case "maps_directions":
+      return gws.getDirections(args.origin, args.destination, { mode: args.mode, alternatives: args.alternatives, waypoints: args.waypoints });
+    case "maps_distance_matrix":
+      return gws.getDistanceMatrix(args.origins, args.destinations, { mode: args.mode });
+
+    // ── A7: Drive Activity API ────────────────────────────────────────────────
+    case "drive_activity_query":
+      return gws.queryDriveActivity({ itemName: args.itemName ?? args.item_name, ancestorName: args.ancestorName ?? args.ancestor_name, filter: args.filter });
+
+    // ── A7: Gemini File API ───────────────────────────────────────────────────
+    case "gemini_file_upload":
+      return gws.geminiUploadFile(args.displayName ?? args.display_name ?? args.file_path, args.mimeType ?? args.mime_type, args.data ?? "");
+    case "gemini_file_list":
+      return gws.geminiListFiles();
+    case "gemini_file_get":
+      return gws.geminiGetFile(args.fileName ?? args.file_name);
+    case "gemini_file_delete":
+      return gws.geminiDeleteFile(args.fileName ?? args.file_name);
+
+    // ── A7: Long-running operations ───────────────────────────────────────────
+    case "operation_get_status": {
+      const opName = args.operationName ?? args.operation_name;
+      if (!opName) throw new Error("operationName is required");
+      return opName.includes("generativelanguage") || opName.startsWith("tunedModels/")
+        ? gws.getGenaiOperation(opName)
+        : gws.getOperation(opName);
+    }
+
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -7760,6 +8984,16 @@ var index_default = {
           bindingOk = br.ok;
         }
       } catch {}
+      // Circuit breaker: write gws_health_ok flag to shared KV namespace so
+      // d1-rest can fast-fail before proxying to gws-worker when auth is expired.
+      // Healthy = oauth token is fresh AND (if GOOGLE_AUTH binding present) binding is ok.
+      // TTL: 2100 s (35 min) — refreshed by any /health call; no dedicated cron needed.
+      const gwsIsHealthy = (oauthFreshness.oauth_fresh ?? false) && (!env2.GOOGLE_AUTH || bindingOk);
+      try {
+        if (env2.CACHE) {
+          await env2.CACHE.put('gws_health_ok', gwsIsHealthy ? 'true' : 'false', { expirationTtl: 2100 });
+        }
+      } catch {}
       return withCors(json({
         status: "ok",
         worker: "gws-worker",
@@ -7770,6 +9004,7 @@ var index_default = {
         r2: !!env2.R2_AUTH,
         google_auth_binding: !!env2.GOOGLE_AUTH,
         google_auth_binding_ok: bindingOk,
+        gws_health_ok: gwsIsHealthy,
         ...oauthFreshness,
       }));
     }
@@ -7850,6 +9085,57 @@ data: ${messageUrl}
         if (sessionId) headers.set("Mcp-Session-Id", sessionId);
         return new Response(resp.body, { status: resp.status, headers });
       }
+    }
+    // ── Drive Workspaces (Projects) proxy ────────────────────────────────────
+    // Routes: /workspaces, /workspaces/:id, /workspaces/:id/items, /workspaces/:id/items/:fileId
+    // Also: /workspaces/priority → drive-pa.googleapis.com suggested files
+    // Auth: SESSION_KEY Bearer (same as all other routes)
+    // Outbound: clients6.google.com/drive/v2internal with OAuth token from google-auth-worker chain
+    if (url.pathname === "/workspaces/priority") {
+      if (!checkAuth(request, env2)) return withCors(json({ error: "Unauthorized" }, 401));
+      const gws = new GoogleWorkspaceClient(env2);
+      const t = await gws.authManager.getAccessToken(env2);
+      const resp = await fetch("https://drive-pa.googleapis.com/v1/workspaces?alt=json", {
+        headers: { "Authorization": `Bearer ${t}`, "X-Origin": "https://drive.google.com" }
+      });
+      return withCors(new Response(await resp.text(), { status: resp.status, headers: { "Content-Type": "application/json" } }));
+    }
+    if (url.pathname === "/workspaces" || url.pathname.startsWith("/workspaces/")) {
+      if (!checkAuth(request, env2)) return withCors(json({ error: "Unauthorized" }, 401));
+      const gws = new GoogleWorkspaceClient(env2);
+      const t = await gws.authManager.getAccessToken(env2);
+      const upstream = `https://clients6.google.com/drive/v2internal${url.pathname}?alt=json`;
+      const bodyText = request.method !== "GET" && request.method !== "DELETE"
+        ? await request.text() : undefined;
+      const resp = await fetch(upstream, {
+        method: request.method,
+        headers: {
+          "Authorization": `Bearer ${t}`,
+          "Content-Type": "application/json",
+          "X-Origin": "https://drive.google.com",
+          "Referer": "https://drive.google.com/",
+        },
+        body: bodyText || undefined,
+      });
+      return withCors(new Response(await resp.text(), { status: resp.status, headers: { "Content-Type": "application/json" } }));
+    }
+    // ── Apps Script API proxy ─────────────────────────────────────────────────
+    // Routes: /gas-proxy/* → https://script.googleapis.com/v1/*
+    // Allows caller to make authenticated Apps Script API calls without exposing OAuth token
+    if (url.pathname.startsWith("/gas-proxy/")) {
+      if (!checkAuth(request, env2)) return withCors(json({ error: "Unauthorized" }, 401));
+      const gws = new GoogleWorkspaceClient(env2);
+      const t = await gws.authManager.getAccessToken(env2);
+      const apiPath = url.pathname.slice("/gas-proxy".length);
+      const upstream = `https://script.googleapis.com/v1${apiPath}`;
+      const bodyText = request.method !== "GET" && request.method !== "DELETE"
+        ? await request.text() : undefined;
+      const resp = await fetch(upstream, {
+        method: request.method,
+        headers: { "Authorization": `Bearer ${t}`, "Content-Type": "application/json" },
+        body: bodyText || undefined,
+      });
+      return withCors(new Response(await resp.text(), { status: resp.status, headers: { "Content-Type": "application/json" } }));
     }
     return withCors(json({ error: "Not found" }, 404));
   }
