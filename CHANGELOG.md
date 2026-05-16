@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [2026-05-16] — MCP audit fixes + health-check expanded (`44e9453`)
+
+### Fixed — mcp-health-check.py now covers all 5 custom workers
+
+- **`scripts/mcp-health-check.py`** `SERVERS` list: added `brain`, `Browser` (browser-auth-worker), and `Nguyen API` entries with UUIDs and `expected_tools` lists. `--refresh` and auto-heal now clear the claude.ai schema cache for all 5 workers instead of just Gemini and G Workspace.
+
+### Chore — wrangler.jsonc documentation and tail worker binding
+
+- **`wrangler.jsonc`**: added `tail_consumers` entry pointing to `legal-tail-worker` for cross-worker error aggregation; added inline AI Gateway documentation comment explaining URL-based routing pattern.
+
 ## [2026-05-16] — Session 8 (shortsaledfw@gmail.com multi-account Gmail + Drive docket enrichment fix)
 
 ### Added — Multi-account Gmail support for shortsaledfw@gmail.com
