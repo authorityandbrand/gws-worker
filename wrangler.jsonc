@@ -12,6 +12,12 @@
     "logs": { "enabled": true }
   },
 
+  // ── Tail Workers ───────────────────────────────────────────────────────────
+  // Ships log events to legal-tail-worker for cross-worker error aggregation.
+  "tail_consumers": [
+    { "service": "legal-tail-worker" }
+  ],
+
   // ── KV ─────────────────────────────────────────────────────────────────────
   // Shared auth namespace — GoogleOAuthManager reads google_oauth_tokens (fallback).
   // Same namespace as google-auth-worker KV, notebooklm-worker KV_CACHE.
@@ -34,6 +40,14 @@
   "services": [
     { "binding": "GOOGLE_AUTH", "service": "google-auth-worker" }
   ]
+
+  // ── AI Gateway ─────────────────────────────────────────────────────────────
+  // All generativelanguage.googleapis.com calls route through the CF AI Gateway
+  // (automation-hub) via GEMINI_GATEWAY_URL constant in src/index.js.
+  // URL pattern: gateway.ai.cloudflare.com/v1/{account}/automation-hub/google-ai-studio
+  // OAuth Bearer tokens pass through unchanged. 5xx fallback to direct endpoint.
+  // Note: [[ai_gateways]] TOML binding not used here — URL-based routing is sufficient.
+  // To add env.AI_GATEWAY typed binding, migrate wrangler.jsonc → wrangler.toml.
 
   // ── Secrets (wrangler secret put <NAME> --name gws-worker) ─────────────────
   // SESSION_KEY              — Bearer token for MCP auth guard (optional — open if unset)
