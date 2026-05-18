@@ -21,8 +21,8 @@
 - **`src/index.js`** — `callTool()` dispatch: when `gmail_account: "shortsaledfw@gmail.com"` (or `"shortsale"`) is passed on any `gmail_*` tool, calls `getShortsaleToken()` and sets the override before the handler runs.
 - **Secrets stored** (via `wrangler secret put`):
   - `GOOGLE_REFRESH_TOKEN_SHORTSALE` — new OAuth2 refresh token for `shortsaledfw@gmail.com` from `authorityandbrand-workspace` project
-  - `SHORTSALE_CLIENT_ID` — `see wrangler secret (redacted from changelog)`
-  - `SHORTSALE_CLIENT_SECRET` — `see wrangler secret (redacted from changelog)`
+  - `SHORTSALE_CLIENT_ID` — see wrangler secret (redacted from changelog)
+  - `SHORTSALE_CLIENT_SECRET` — see wrangler secret (redacted from changelog)
 - **Usage**: `gmail_search { query: "...", gmail_account: "shortsaledfw@gmail.com" }` — returns messages from Cat's shortsale inbox with its own OAuth token (not authorityandbrand's)
 
 ### Fixed — Drive file IDs never injected into docket enrichment Gemini calls
