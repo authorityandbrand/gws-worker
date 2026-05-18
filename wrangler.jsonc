@@ -37,8 +37,12 @@
   // GOOGLE_AUTH: token authority — /token returns fresh service account bearer token.
   // All Google API calls go through googleFetch() which calls getAccessToken() first.
   // Token cascade: GOOGLE_AUTH binding → KV cache → R2 backup → GOOGLE_REFRESH_TOKEN secret.
+  // BROWSER_AUTH: central cookie auth hub — 638 stored cookies across all Google services.
+  // Use for cookie-based auth (Drive, Sheets, NLM, Gemini web) via /internal/fetch.
+  // Status check: GET /internal/status. Force refresh: POST /internal/refresh.
   "services": [
-    { "binding": "GOOGLE_AUTH", "service": "google-auth-worker" }
+    { "binding": "GOOGLE_AUTH", "service": "google-auth-worker" },
+    { "binding": "BROWSER_AUTH", "service": "browser-auth-worker" }
   ]
 
   // ── AI Gateway ─────────────────────────────────────────────────────────────
