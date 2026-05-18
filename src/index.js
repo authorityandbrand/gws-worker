@@ -9137,6 +9137,39 @@ data: ${messageUrl}
       });
       return withCors(new Response(await resp.text(), { status: resp.status, headers: { "Content-Type": "application/json" } }));
     }
+    // ── GCP Cloud Billing API proxy ───────────────────────────────────────────
+    // GET  /gcp/billing/accounts                  → list billing accounts
+    // GET  /gcp/billing/projects/:projectId        → get project billing info
+    // POST /gcp/billing/projects/:projectId/link   → {billingAccountName}
+    if (url.pathname.startsWith("/gcp/billing")) {
+      if (!checkAuth(request, env2)) return withCors(json({ error: "Unauthorized" }, 401));
+      const gws = new GoogleWorkspaceClient(env2);
+      const t = await gws.authManager.getAccessToken(env2);
+      const subPath = url.pathname.slice("/gcp/billing".length);
+      let upstream;
+      if (subPath === "/accounts" || subPath === "/accounts/") {
+        upstream = "https://cloudbilling.googleapis.com/v1/billingAccounts";
+      } else if (subPath.startsWith("/projects/") && subPath.endsWith("/link")) {
+        const projectId = subPath.slice("/projects/".length, -"/link".length);
+        upstream = `https://cloudbilling.googleapis.com/v1/projects/${projectId}/billingInfo`;
+      } else if (subPath.startsWith("/projects/")) {
+        const projectId = subPath.slice("/projects/".length);
+        upstream = `https://cloudbilling.googleapis.com/v1/projects/${projectId}/billingInfo`;
+      } else {
+        return withCors(json({ error: "Unknown billing route: " + subPath }, 400));
+      }
+      const bodyText = request.method !== "GET" ? await request.text() : undefined;
+      const resp = await fetch(upstream, {
+        method: request.method === "POST" && subPath.endsWith("/link") ? "PUT" : request.method,
+        headers: {
+          "Authorization": `Bearer ${t}`,
+          "Content-Type": "application/json",
+          "x-goog-user-project": "authorityandbrand-workspace",
+        },
+        body: bodyText || undefined,
+      });
+      return withCors(new Response(await resp.text(), { status: resp.status, headers: { "Content-Type": "application/json" } }));
+    }
     return withCors(json({ error: "Not found" }, 404));
   }
 };
